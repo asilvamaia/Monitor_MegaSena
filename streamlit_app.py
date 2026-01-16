@@ -15,55 +15,82 @@ st.set_page_config(page_title="Mega Mobile", layout="centered", page_icon="🎱"
 # --- CSS OTIMIZADO PARA CELULAR (PRODUÇÃO) ---
 st.markdown("""
 <style>
+    /* Ajustes gerais de espaçamento para mobile */
     .block-container {
         padding-top: 3rem;
         padding-left: 0.5rem;
         padding-right: 0.5rem;
-        padding-bottom: 5rem;
+        padding-bottom: 6rem;
     }
+    
+    /* Botões do Grid de Números (mais altos para o toque) */
     div[data-testid="stHorizontalBlock"] button {
-        min-height: 45px !important;
+        min-height: 48px !important;
         border-radius: 8px !important;
         margin-bottom: 4px !important;
+        font-weight: bold;
     }
+    
+    /* Remove espaçamentos laterais das colunas */
     div[data-testid="column"] {
-        padding: 0 2px !important;
+        padding: 0 1px !important;
     }
+    
+    /* Botões de Ação Principais */
     .stButton button[kind="primary"] {
         width: 100%;
         border-radius: 12px;
-        height: 50px;
+        height: 52px;
         font-size: 18px;
+        font-weight: 600;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
+    
+    /* Estilização das Abas */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 2px;
+        gap: 4px;
+        background-color: transparent;
     }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
         white-space: pre-wrap;
         background-color: #f0f2f6;
-        border-radius: 4px 4px 0px 0px;
-        gap: 1px;
-        padding-top: 10px;
-        padding-bottom: 10px;
+        border-radius: 8px;
+        gap: 2px;
+        padding-top: 8px;
+        padding-bottom: 8px;
         flex: 1; 
+        font-size: 14px;
     }
     .stTabs [aria-selected="true"] {
         background-color: #ffffff;
-        border-top: 2px solid #ff4b4b;
+        border: 1px solid #e0e0e0;
+        border-bottom: 3px solid #ff4b4b;
+        font-weight: bold;
+    }
+    
+    /* Esconde o Header do Streamlit para parecer App Nativo */
+    header[data-testid="stHeader"] {
+        display: none;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- ÍCONE IOS (WEB APP) ---
+# --- CONFIGURAÇÃO DO ÍCONE IOS ---
 def setup_ios_icon():
-    """Configura o ícone para quando salvar na tela de início do iPhone"""
-    icon_url = "https://img.icons8.com/?size=100&id=OzucADulFQ8Z&format=png&color=000000"
+    """Injeta meta tags para ícone no iPhone e comportamento de WebApp"""
+    
+    # URL direta de um ícone PNG de alta qualidade (Trevo)
+    icon_url = "https://img.icons8.com/color/480/clover--v1.png"
     
     st.markdown(f"""
         <link rel="apple-touch-icon" href="{icon_url}">
+        <link rel="apple-touch-icon" sizes="152x152" href="{icon_url}">
+        <link rel="apple-touch-icon" sizes="180x180" href="{icon_url}">
+        <link rel="apple-touch-icon" sizes="167x167" href="{icon_url}">
+        
         <meta name="apple-mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-title" content="MegaApp">
+        <meta name="apple-mobile-web-app-title" content="MegaSena">
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     """, unsafe_allow_html=True)
 
@@ -85,7 +112,7 @@ def init_db():
 def get_db_connection():
     return sqlite3.connect(DB_FILE)
 
-# --- LÓGICA DE ATUALIZAÇÃO E DADOS ---
+# --- LÓGICA DE DADOS & ATUALIZAÇÃO ---
 def check_daily_update():
     conn = get_db_connection()
     c = conn.cursor()
@@ -104,6 +131,7 @@ def check_daily_update():
     return count, needs_update
 
 def fetch_latest_results():
+    # API Pública da Loterias Caixa
     url = "https://loteriascaixa-api.herokuapp.com/api/megasena"
     try:
         response = requests.get(url, timeout=10)
@@ -135,14 +163,17 @@ def get_statistics():
     df = pd.read_sql_query("SELECT concurso, dezenas FROM results ORDER BY concurso DESC", conn)
     conn.close()
     if df.empty: return None, None, None
+    
     all_numbers = []
     for d in df['dezenas']: all_numbers.extend(json.loads(d))
+    
+    # Frequência
     counter = Counter(all_numbers)
     for i in range(1, 61):
         if i not in counter: counter[i] = 0
     df_freq = pd.DataFrame.from_dict(counter, orient='index', columns=['frequencia']).sort_index()
     
-    # Cálculo de Atraso (Lag)
+    # Atraso (Lag)
     last_seen = {}
     latest_concurso = df.iloc[0]['concurso']
     for index, row in df.iterrows():
@@ -150,10 +181,12 @@ def get_statistics():
         for n in nums:
             if n not in last_seen: last_seen[n] = row['concurso']
         if len(last_seen) == 60: break
+    
     lag_data = {}
     for i in range(1, 61):
         if i in last_seen: lag_data[i] = latest_concurso - last_seen[i]
-        else: lag_data[i] = latest_concurso 
+        else: lag_data[i] = latest_concurso # Nunca saiu (teórico)
+        
     df_lag = pd.DataFrame.from_dict(lag_data, orient='index', columns=['atraso'])
     
     return df_freq, df_lag, counter
@@ -161,29 +194,35 @@ def get_statistics():
 def generate_game(qtd, strategy="random", counter=None):
     if strategy == "random" or not counter:
         return sorted(random.sample(range(1, 61), qtd))
+    
     numbers = list(counter.keys())
-    if strategy == "smart":
+    
+    if strategy == "smart": # Mais frequentes
         weights = [counter[n] + 1 for n in numbers]
         selection = set()
         while len(selection) < qtd: selection.add(random.choices(numbers, weights=weights, k=1)[0])
         return sorted(list(selection))
-    elif strategy == "cold":
+        
+    elif strategy == "cold": # Menos frequentes
         weights = [1/(counter[n]+1) for n in numbers]
         selection = set()
         while len(selection) < qtd: selection.add(random.choices(numbers, weights=weights, k=1)[0])
         return sorted(list(selection))
-    elif strategy == "balanced":
+        
+    elif strategy == "balanced": # 50% Quente / 50% Frio
         qtd_hot = (qtd // 2) + (qtd % 2)
         sorted_by_freq = sorted(numbers, key=lambda x: counter[x], reverse=True)
         mid_point = len(sorted_by_freq) // 2
         hot_pool = sorted_by_freq[:mid_point]
         cold_pool = sorted_by_freq[mid_point:]
+        
         selection = set()
         while len(selection) < qtd_hot: selection.add(random.choice(hot_pool))
         while len(selection) < qtd:
             pick = random.choice(cold_pool)
             if pick not in selection: selection.add(pick)
         return sorted(list(selection))
+        
     return sorted(random.sample(range(1, 61), qtd))
 
 def check_game_matches(game_numbers, start_date_iso):
@@ -203,7 +242,7 @@ def check_game_matches(game_numbers, start_date_iso):
             })
     return matches
 
-# --- HELPERS DE ESTADO ---
+# --- STATE HELPERS ---
 def toggle_number(num):
     if 'selected_numbers' not in st.session_state: st.session_state.selected_numbers = []
     if num in st.session_state.selected_numbers:
@@ -214,30 +253,31 @@ def toggle_number(num):
 def clear_selection(): st.session_state.selected_numbers = []
 
 # ==========================================
-# APP MAIN (PRODUÇÃO)
+# APP MAIN
 # ==========================================
 def main():
+    setup_ios_icon() # Injeta o ícone
     init_db()
-    setup_ios_icon()
     
     # Auto-update silencioso
     new_records, updated_now = check_daily_update()
     if updated_now and new_records > 0:
-        st.toast(f"🔄 Base atualizada: {new_records} novos sorteios!", icon="✅")
+        st.toast(f"🔄 Base atualizada: {new_records} novos!", icon="✅")
     
     if 'selected_numbers' not in st.session_state: st.session_state.selected_numbers = []
 
-    # Cabeçalho
+    # Cabeçalho Minimalista
     c1, c2 = st.columns([5, 1])
     c1.subheader("🎱 Mega Mobile")
-    c2.caption("v1.0") # VERSÃO DE PRODUÇÃO
+    c2.caption("v1.0")
 
-    # Abas Principais
+    # --- ABAS DE NAVEGAÇÃO ---
     tab_games, tab_stats, tab_gen, tab_config = st.tabs(["📋 Jogos", "📊 Stats", "🎲 Gerar", "⚙️ Config"])
 
     # --- ABA 1: MEUS JOGOS ---
     with tab_games:
         with st.expander("➕ Novo Jogo Manual", expanded=False):
+            # Grid 5x12
             cols_per_row = 5
             for r in range(12):
                 cols = st.columns(cols_per_row)
@@ -246,25 +286,36 @@ def main():
                     if num <= 60:
                         with cols[c]:
                             is_sel = num in st.session_state.selected_numbers
-                            st.button(f"{num:02d}", key=f"b_{num}", type="primary" if is_sel else "secondary", on_click=toggle_number, args=(num,))
+                            st.button(f"{num:02d}", key=f"b_{num}", 
+                                      type="primary" if is_sel else "secondary", 
+                                      on_click=toggle_number, args=(num,))
+            
             st.markdown("---")
             c_info, c_clear = st.columns([3, 1])
             c_info.markdown(f"**Selecionados:** {len(st.session_state.selected_numbers)}")
             c_clear.button("Limpar", on_click=clear_selection, use_container_width=True)
+            
             start_date = st.date_input("Início da verificação:", date.today(), key="date_manual")
+            
             if st.button("💾 SALVAR MANUAL", type="primary"):
-                if len(st.session_state.selected_numbers) < 6: st.error("Mínimo 6 números.")
+                if len(st.session_state.selected_numbers) < 6:
+                    st.error("Mínimo 6 números.")
                 else:
                     conn = get_db_connection()
-                    conn.execute("INSERT INTO tracked_games (numbers, start_date) VALUES (?, ?)", (json.dumps(sorted(st.session_state.selected_numbers)), start_date.strftime("%Y-%m-%d")))
+                    conn.execute("INSERT INTO tracked_games (numbers, start_date) VALUES (?, ?)", 
+                                (json.dumps(sorted(st.session_state.selected_numbers)), start_date.strftime("%Y-%m-%d")))
                     conn.commit(); conn.close()
                     st.success("Salvo!"); clear_selection(); time.sleep(0.5); st.rerun()
 
         st.write("") 
+        
+        # Lista de Jogos
         conn = get_db_connection()
         df = pd.read_sql_query("SELECT * FROM tracked_games WHERE active=1 ORDER BY id DESC", conn)
         conn.close()
-        if df.empty: st.info("Nenhum jogo ativo.")
+        
+        if df.empty:
+            st.info("Nenhum jogo ativo.")
         
         for _, row in df.iterrows():
             nums = json.loads(row['numbers'])
@@ -274,17 +325,21 @@ def main():
             if edit_key not in st.session_state: st.session_state[edit_key] = False
 
             with st.container(border=True):
+                # Modo Visualização
                 if not st.session_state[edit_key]:
                     c1, c2, c3 = st.columns([5, 1, 1])
-                    c1.markdown(f"**Jogo #{game_id}** • {len(nums)} dz")
+                    c1.markdown(f"**Jogo #{game_id}** • {len(nums)} dezenas")
                     if c2.button("✏️", key=f"ed_{game_id}"): st.session_state[edit_key] = True; st.rerun()
                     if c3.button("🗑️", key=f"del_{game_id}"): 
                         conn = get_db_connection(); conn.execute("UPDATE tracked_games SET active=0 WHERE id=?", (game_id,)); conn.commit(); conn.close(); st.rerun()
+                    
                     st.markdown(" ".join([f"`{n:02d}`" for n in nums]))
+                    
                     wins = [m for m in matches if m['acertos'] >= 4]
                     if wins: st.error(f"🏆 **{len(wins)} PRÊMIO(S)!**")
                     elif matches: st.info(f"🔎 {len(matches)} acerto(s).")
                     else: st.caption("Sem acertos.")
+                    
                     if matches:
                         with st.expander("Ver sorteios"):
                             for m in matches:
@@ -292,6 +347,8 @@ def main():
                                 icon = "🏆" if m['acertos'] >= 4 else "🎯"
                                 st.markdown(f"**:{color}[{icon} {m['acertos']} Acertos]** em {m['data']}")
                                 st.caption(f"Conc: {m['concurso']} | {m['dezenas_acertadas']}"); st.divider()
+                
+                # Modo Edição
                 else:
                     st.markdown(f"**📝 Editar Jogo #{game_id}**")
                     try: cur_date = datetime.strptime(row['start_date'], "%Y-%m-%d").date()
@@ -305,10 +362,11 @@ def main():
     with tab_stats:
         df_stats, df_lag, counter = get_statistics()
         if not df_stats is None:
-            st.markdown("#### ⏰ Dezenas Atrasadas")
-            st.caption("Concursos sem sair:")
+            st.markdown("#### ⏰ Top Atrasos (Lag)")
+            st.caption("Dezenas que não saem há mais tempo:")
             top_lag = df_lag.nlargest(10, 'atraso')
             st.dataframe(top_lag.T, use_container_width=True)
+            
             st.divider()
             st.markdown("#### 🔥 Frequência")
             st.bar_chart(df_stats, color="#ff4b4b", height=200)
@@ -320,7 +378,7 @@ def main():
     # --- ABA 3: GERADOR ---
     with tab_gen:
         c_qtd, c_strat = st.columns([1, 2])
-        with c_qtd: qtd_dezenas = st.number_input("Qtd", 6, 20, 6)
+        with c_qtd: qtd_dezenas = st.number_input("Dezenas", 6, 20, 6)
         with c_strat: strategy = st.selectbox("Estratégia", ["Aleatória", "Inteligente (Quentes)", "Ousada (Frias)", "Equilibrada (Mista)"])
         strat_map = {"Aleatória": "random", "Inteligente (Quentes)": "smart", "Ousada (Frias)": "cold", "Equilibrada (Mista)": "balanced"}
         
@@ -336,18 +394,21 @@ def main():
             st.markdown(" ".join([f"<span style='background:#e0e2e6;padding:5px;border-radius:4px;font-weight:bold;color:black'>{n:02d}</span>" for n in gen_nums]), unsafe_allow_html=True)
             if st.button("💾 Salvar Gerado"):
                 conn = get_db_connection()
-                conn.execute("INSERT INTO tracked_games (numbers, start_date) VALUES (?, ?)", (json.dumps(gen_nums), date.today().strftime("%Y-%m-%d")))
-                conn.commit(); conn.close(); st.toast("Salvo!", icon="✅"); del st.session_state['last_generated']; time.sleep(0.5); st.rerun()
+                conn.execute("INSERT INTO tracked_games (numbers, start_date) VALUES (?, ?)", 
+                            (json.dumps(gen_nums), date.today().strftime("%Y-%m-%d")))
+                conn.commit(); conn.close()
+                st.toast("Salvo!", icon="✅"); del st.session_state['last_generated']; time.sleep(0.5); st.rerun()
 
     # --- ABA 4: CONFIG / BACKUP ---
     with tab_config:
-        st.header("💾 Backup de Dados")
+        st.header("💾 Backup")
         st.info("Salve seus jogos antes de limpar o celular.")
         
         # Download
         conn = get_db_connection()
         df_export = pd.read_sql_query("SELECT numbers, start_date, active, created_at FROM tracked_games", conn)
         conn.close()
+        
         if not df_export.empty:
             csv = df_export.to_csv(index=False).encode('utf-8')
             st.download_button(label="⬇️ Baixar CSV", data=csv, file_name=f"backup_mega_{date.today()}.csv", mime='text/csv', type='primary')
@@ -371,7 +432,8 @@ def main():
                             created = row['created_at'] if 'created_at' in row else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             check = conn.execute("SELECT id FROM tracked_games WHERE numbers = ? AND start_date = ?", (row['numbers'], row['start_date'])).fetchone()
                             if not check:
-                                conn.execute("INSERT INTO tracked_games (numbers, start_date, active, created_at) VALUES (?, ?, ?, ?)", (row['numbers'], row['start_date'], active, created))
+                                conn.execute("INSERT INTO tracked_games (numbers, start_date, active, created_at) VALUES (?, ?, ?, ?)", 
+                                           (row['numbers'], row['start_date'], active, created))
                                 count += 1
                         conn.commit(); conn.close(); st.success(f"Restaurado: {count} jogos."); time.sleep(1); st.rerun()
                 except Exception as e: st.error(f"Erro: {e}")
