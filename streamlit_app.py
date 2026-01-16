@@ -7,61 +7,58 @@ from datetime import datetime
 import time
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Monitor Mega-Sena", layout="wide")
+st.set_page_config(page_title="Mega Mobile", layout="centered", page_icon="🎱")
 
-# --- CSS CUSTOMIZADO PARA MELHORAR O GRID ---
+# --- CSS MOBILE-FIRST ---
 st.markdown("""
 <style>
-    div[data-testid="stHorizontalBlock"] {
-        gap: 0.2rem !important;
+    /* Remove preenchimento excessivo no topo e lados para ganhar tela no celular */
+    .block-container {
+        padding-top: 1rem;
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+        padding-bottom: 5rem; /* Espaço para scroll final */
     }
+    
+    /* Botões do Grid de Números: Mais altos e fáceis de tocar */
+    div[data-testid="stHorizontalBlock"] button {
+        min-height: 45px !important;
+        border-radius: 8px !important;
+        margin-bottom: 4px !important;
+    }
+    
+    /* Ajuste de gaps entre colunas */
     div[data-testid="column"] {
-        min-width: 0px !important;
-        padding: 0px !important;
+        padding: 0 2px !important;
     }
-    button[kind="secondary"] {
-        padding-left: 5px !important;
-        padding-right: 5px !important;
-        font-weight: bold;
-    }
-    button[kind="primary"] {
-        padding-left: 5px !important;
-        padding-right: 5px !important;
-        font-weight: bold;
+    
+    /* Botão de Ação Principal (Salvar) */
+    .stButton button[kind="primary"] {
+        width: 100%;
+        border-radius: 12px;
+        height: 50px;
+        font-size: 18px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- BANCO DE DADOS (SQLite) ---
+# --- BANCO DE DADOS ---
 DB_FILE = "megasena.db"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS tracked_games (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            numbers TEXT NOT NULL,
-            start_date TEXT NOT NULL,
-            active INTEGER DEFAULT 1,
-            created_at TEXT
-        )
-    ''')
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS results (
-            concurso INTEGER PRIMARY KEY,
-            data_sorteio TEXT,
-            dezenas TEXT
-        )
-    ''')
+    c.execute('''CREATE TABLE IF NOT EXISTS tracked_games (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, numbers TEXT, start_date TEXT, active INTEGER DEFAULT 1, created_at TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS results (
+            concurso INTEGER PRIMARY KEY, data_sorteio TEXT, dezenas TEXT)''')
     conn.commit()
     conn.close()
 
 def get_db_connection():
     return sqlite3.connect(DB_FILE)
 
-# --- FUNÇÕES DE LÓGICA ---
-
+# --- LÓGICA ---
 def fetch_latest_results():
     url = "https://loteriascaixa-api.herokuapp.com/api/megasena"
     try:
@@ -69,10 +66,9 @@ def fetch_latest_results():
         if response.status_code == 200:
             data = response.json()
             draws = data if isinstance(data, list) else [data]
-                
             conn = get_db_connection()
             cursor = conn.cursor()
-            new_records = 0
+            count = 0
             for draw in draws:
                 concurso = draw.get('concurso')
                 data_sorteio = draw.get('data')
@@ -80,235 +76,149 @@ def fetch_latest_results():
                 try:
                     dt_obj = datetime.strptime(data_sorteio, "%d/%m/%Y")
                     data_iso = dt_obj.strftime("%Y-%m-%d")
-                except:
-                    data_iso = datetime.now().strftime("%Y-%m-%d")
-
+                except: continue
+                
                 try:
                     cursor.execute('INSERT OR IGNORE INTO results (concurso, data_sorteio, dezenas) VALUES (?, ?, ?)', 
                                  (concurso, data_iso, dezenas))
-                    if cursor.rowcount > 0:
-                        new_records += 1
-                except Exception:
-                    pass
+                    if cursor.rowcount > 0: count += 1
+                except: pass
             conn.commit()
             conn.close()
-            return new_records
-    except Exception as e:
-        st.error(f"Erro na API: {e}")
-        return 0
+            return count
+    except: return 0
     return 0
 
 def check_game_matches(game_numbers, start_date_iso):
     conn = get_db_connection()
-    # Pega resultados a partir da data informada
-    df = pd.read_sql_query(
-        "SELECT concurso, data_sorteio, dezenas FROM results WHERE data_sorteio >= ? ORDER BY data_sorteio DESC",
-        conn, params=(start_date_iso,)
-    )
+    df = pd.read_sql_query("SELECT * FROM results WHERE data_sorteio >= ? ORDER BY data_sorteio DESC", conn, params=(start_date_iso,))
     conn.close()
-    
     game_set = set(game_numbers)
-    matches_found = []
-    
-    for index, row in df.iterrows():
-        draw_numbers = set(json.loads(row['dezenas']))
-        hits = game_set.intersection(draw_numbers)
-        num_hits = len(hits)
-        
-        # ALTERAÇÃO AQUI: Agora exibe se tiver pelo menos 1 acerto
-        if num_hits > 0:
-            matches_found.append({
-                'concurso': row['concurso'],
-                'data': row['data_sorteio'],
-                'acertos': num_hits,
-                'dezenas_sorteadas': sorted(list(draw_numbers)),
+    matches = []
+    for _, row in df.iterrows():
+        draw_nums = set(json.loads(row['dezenas']))
+        hits = game_set.intersection(draw_nums)
+        if len(hits) > 0:
+            matches.append({
+                'concurso': row['concurso'], 'data': row['data_sorteio'],
+                'acertos': len(hits), 'dezenas_sorteadas': sorted(list(draw_nums)),
                 'dezenas_acertadas': sorted(list(hits))
             })
-    return matches_found
+    return matches
 
-# --- GERENCIAMENTO DE ESTADO PARA SELEÇÃO DE NÚMEROS ---
+# --- STATE ---
 def toggle_number(num):
-    if 'selected_numbers' not in st.session_state:
-        st.session_state.selected_numbers = []
-    
+    if 'selected_numbers' not in st.session_state: st.session_state.selected_numbers = []
     if num in st.session_state.selected_numbers:
         st.session_state.selected_numbers.remove(num)
-    else:
-        if len(st.session_state.selected_numbers) < 20:
-            st.session_state.selected_numbers.append(num)
-        else:
-            st.toast("Limite máximo de 20 números atingido!", icon="⚠️")
+    elif len(st.session_state.selected_numbers) < 20:
+        st.session_state.selected_numbers.append(num)
 
-def clear_selection():
-    st.session_state.selected_numbers = []
+def clear_selection(): st.session_state.selected_numbers = []
 
-# --- INTERFACE PRINCIPAL ---
-
+# --- APP ---
 def main():
     init_db()
-    
-    if 'selected_numbers' not in st.session_state:
-        st.session_state.selected_numbers = []
-    
-    st.title("🎱 Monitor Mega-Sena")
-    
-    # --- SIDEBAR (Cadastro com Grid) ---
-    with st.sidebar:
-        st.header("Novo Jogo")
-        st.write("Clique para selecionar (Min: 6):")
-        
-        grid_container = st.container(border=True)
-        with grid_container:
-            for row in range(6):
-                cols = st.columns(10)
-                for col_idx in range(10):
-                    num = (row * 10) + col_idx + 1
-                    with cols[col_idx]:
-                        is_selected = num in st.session_state.selected_numbers
-                        btn_type = "primary" if is_selected else "secondary"
-                        st.button(
-                            f"{num:02d}", 
-                            key=f"btn_{num}", 
-                            type=btn_type, 
-                            on_click=toggle_number, 
-                            args=(num,)
-                        )
+    if 'selected_numbers' not in st.session_state: st.session_state.selected_numbers = []
 
-        qtd_selecionada = len(st.session_state.selected_numbers)
-        st.markdown(f"**Selecionados:** {qtd_selecionada} / 20")
-        st.text(f"{sorted(st.session_state.selected_numbers)}")
-        
-        c_clear, c_dummy = st.columns([1, 2])
-        if c_clear.button("Limpar", on_click=clear_selection):
-            pass
+    # Cabeçalho Compacto
+    c_title, c_refresh = st.columns([5, 1])
+    with c_title:
+        st.subheader("🎱 Mega Mobile")
+    with c_refresh:
+        if st.button("🔄"):
+            with st.spinner("."): fetch_latest_results()
+            st.rerun()
 
-        st.divider()
-
-        start_date = st.date_input("Verificar a partir de:", datetime.now())
+    # --- ÁREA DE CRIAÇÃO (EXPANDER) ---
+    # Usamos expander para não ocupar espaço quando não estiver usando
+    with st.expander("➕ Novo Jogo (Clique para abrir)", expanded=False):
         
-        if st.button("💾 Cadastrar Jogo", type="primary", use_container_width=True):
-            if qtd_selecionada < 6:
-                st.error("Selecione pelo menos 6 números.")
+        # Grid Otimizado para Celular (5 colunas x 12 linhas)
+        # 5 colunas garante botões grandes o suficiente para o polegar
+        cols_per_row = 5
+        rows = 12 
+        
+        for r in range(rows):
+            cols = st.columns(cols_per_row)
+            for c in range(cols_per_row):
+                num = (r * cols_per_row) + c + 1
+                if num <= 60:
+                    with cols[c]:
+                        is_sel = num in st.session_state.selected_numbers
+                        st.button(f"{num:02d}", key=f"b_{num}", 
+                                  type="primary" if is_sel else "secondary", 
+                                  on_click=toggle_number, args=(num,))
+        
+        # Área de confirmação Sticky-like
+        st.markdown("---")
+        col_info, col_clear = st.columns([3, 1])
+        col_info.markdown(f"**Selecionados:** {len(st.session_state.selected_numbers)}")
+        col_clear.button("Limpar", on_click=clear_selection, use_container_width=True)
+        
+        start_date = st.date_input("Início da verificação:", datetime.now())
+        
+        if st.button("💾 SALVAR JOGO", type="primary"):
+            if len(st.session_state.selected_numbers) < 6:
+                st.error("Mínimo 6 números.")
             else:
-                nums_sorted = sorted(st.session_state.selected_numbers)
-                nums_json = json.dumps(nums_sorted)
-                start_date_iso = start_date.strftime("%Y-%m-%d")
-                
                 conn = get_db_connection()
-                conn.execute("INSERT INTO tracked_games (numbers, start_date, created_at) VALUES (?, ?, ?)",
-                                (nums_json, start_date_iso, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                conn.execute("INSERT INTO tracked_games (numbers, start_date) VALUES (?, ?)",
+                            (json.dumps(sorted(st.session_state.selected_numbers)), start_date.strftime("%Y-%m-%d")))
                 conn.commit()
                 conn.close()
-                
-                st.success("Cadastrado!")
+                st.success("Salvo!")
                 clear_selection()
-                time.sleep(1)
+                time.sleep(0.5)
                 st.rerun()
 
-        st.divider()
-        if st.button("🔄 Atualizar Base de Dados"):
-            with st.spinner("Atualizando..."):
-                count = fetch_latest_results()
-            if count > 0:
-                st.success(f"{count} novos!")
-            else:
-                st.info("Base atualizada.")
-
-    # --- ÁREA PRINCIPAL (Visualização) ---
-    
-    tab1, tab2 = st.tabs(["Jogos Ativos", "Jogos Parados"])
+    # --- LISTA DE JOGOS (Cards Verticais) ---
+    st.write("") # Espaço
     
     conn = get_db_connection()
-    df_games = pd.read_sql_query("SELECT * FROM tracked_games ORDER BY id DESC", conn)
+    df = pd.read_sql_query("SELECT * FROM tracked_games WHERE active=1 ORDER BY id DESC", conn)
     conn.close()
+
+    if df.empty:
+        st.info("Nenhum jogo ativo. Abra o menu acima para criar.")
     
-    if not df_games.empty:
-        df_games['numbers_list'] = df_games['numbers'].apply(json.loads)
+    for _, row in df.iterrows():
+        nums = json.loads(row['numbers'])
+        matches = check_game_matches(nums, row['start_date'])
         
-        active_games = df_games[df_games['active'] == 1]
-        stopped_games = df_games[df_games['active'] == 0]
-        
-        with tab1:
-            if active_games.empty:
-                st.info("Nenhum jogo ativo.")
+        # Card Visual
+        with st.container(border=True):
+            # Cabeçalho do Card
+            c1, c2 = st.columns([5, 1])
+            c1.markdown(f"**Jogo #{row['id']}** • {len(nums)} dezenas")
+            if c2.button("🗑️", key=f"del_{row['id']}"): # Botão de parar minimalista
+                conn = get_db_connection()
+                conn.execute("UPDATE tracked_games SET active=0 WHERE id=?", (row['id'],))
+                conn.commit()
+                conn.close()
+                st.rerun()
+
+            # Números formatados como tags
+            st.markdown(" ".join([f"`{n:02d}`" for n in nums]))
+            
+            # Alerta de Prêmios
+            wins = [m for m in matches if m['acertos'] >= 4]
+            if wins:
+                st.error(f"🏆 **{len(wins)} PRÊMIO(S)!**")
+            elif matches:
+                st.info(f"🔎 {len(matches)} sorteio(s) com acertos.")
             else:
-                for idx, row in active_games.iterrows():
-                    game_id = row['id']
-                    numbers = row['numbers_list']
-                    start_date = row['start_date']
-                    
-                    with st.container(border=True):
-                        c1, c2, c3 = st.columns([2, 5, 1])
-                        with c1:
-                            st.caption(f"ID: {game_id} | Início: {start_date}")
-                            st.markdown(f"**{len(numbers)} Dezenas**")
-                            st.markdown(" ".join([f"`{n:02d}`" for n in numbers]))
-                        
-                        with c2:
-                            matches = check_game_matches(numbers, start_date)
-                            if matches:
-                                # Verifica se houve ALGUM prêmio real
-                                wins = [m for m in matches if m['acertos'] >= 4]
-                                
-                                if wins:
-                                    st.error(f"🏆 PARABÉNS! {len(wins)} prêmio(s) encontrado(s)!")
-                                else:
-                                    st.info(f"🔎 {len(matches)} sorteio(s) com acertos (sem prêmio).")
+                st.caption("Sem acertos no período.")
 
-                                with st.expander("Ver Detalhes dos Sorteios"):
-                                    for m in matches:
-                                        acertos = m['acertos']
-                                        
-                                        # Lógica de exibição do prêmio
-                                        if acertos == 6:
-                                            texto_premio = "🏆 SENA (Vencedor)"
-                                            cor = ":red"
-                                        elif acertos == 5:
-                                            texto_premio = "🥈 QUINA"
-                                            cor = ":orange"
-                                        elif acertos == 4:
-                                            texto_premio = "🥉 QUADRA"
-                                            cor = ":orange"
-                                        else:
-                                            texto_premio = "🎯 Não Premiado"
-                                            cor = ":grey"
-
-                                        st.markdown(f"**Concurso {m['concurso']} ({m['data']})**")
-                                        st.markdown(f"{cor}[{texto_premio}] - Você acertou **{acertos}** números.")
-                                        st.caption(f"Seus acertos: {m['dezenas_acertadas']}")
-                                        st.divider()
-                            else:
-                                st.write("Nenhum acerto registrado neste período.")
-                        
-                        with c3:
-                            st.write("")
-                            if st.button("Arquivar", key=f"stop_{game_id}"):
-                                conn = get_db_connection()
-                                conn.execute("UPDATE tracked_games SET active = 0 WHERE id = ?", (game_id,))
-                                conn.commit()
-                                conn.close()
-                                st.rerun()
-
-        with tab2:
-            if stopped_games.empty:
-                st.write("Nenhum jogo arquivado.")
-            else:
-                for idx, row in stopped_games.iterrows():
-                    game_id = row['id']
-                    with st.container(border=True):
-                        c1, c2 = st.columns([6, 1])
-                        with c1:
-                            st.caption(f"ID: {game_id} (Arquivado)")
-                            st.text(f"{row['numbers_list']}")
-                        with c2:
-                            if st.button("Reativar", key=f"react_{game_id}"):
-                                conn = get_db_connection()
-                                conn.execute("UPDATE tracked_games SET active = 1 WHERE id = ?", (game_id,))
-                                conn.commit()
-                                conn.close()
-                                st.rerun()
-    else:
-        st.info("Utilize o painel lateral para cadastrar seus jogos.")
+            # Expander para detalhes (Economiza scroll vertical)
+            if matches:
+                with st.expander("Ver sorteios"):
+                    for m in matches:
+                        cor = "orange" if m['acertos'] >= 4 else "gray"
+                        icon = "🏆" if m['acertos'] >= 4 else "🎯"
+                        st.markdown(f"**:{cor}[{icon} {m['acertos']} Acertos]** em {m['data']}")
+                        st.caption(f"Conc: {m['concurso']} | {m['dezenas_acertadas']}")
+                        st.divider()
 
 if __name__ == "__main__":
     main()
