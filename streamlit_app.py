@@ -9,15 +9,35 @@ import time
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Monitor Mega-Sena", layout="wide")
 
+# --- CSS CUSTOMIZADO PARA MELHORAR O GRID ---
+st.markdown("""
+<style>
+    div[data-testid="stHorizontalBlock"] {
+        gap: 0.2rem !important;
+    }
+    div[data-testid="column"] {
+        min-width: 0px !important;
+        padding: 0px !important;
+    }
+    button[kind="secondary"] {
+        padding-left: 5px !important;
+        padding-right: 5px !important;
+        font-weight: bold;
+    }
+    button[kind="primary"] {
+        padding-left: 5px !important;
+        padding-right: 5px !important;
+        font-weight: bold;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # --- BANCO DE DADOS (SQLite) ---
 DB_FILE = "megasena.db"
 
 def init_db():
-    """Inicializa o banco de dados e cria as tabelas se não existirem."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    
-    # Tabela de Jogos Monitorados
     c.execute('''
         CREATE TABLE IF NOT EXISTS tracked_games (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,8 +47,6 @@ def init_db():
             created_at TEXT
         )
     ''')
-    
-    # Tabela de Resultados da Mega-Sena (Cache)
     c.execute('''
         CREATE TABLE IF NOT EXISTS results (
             concurso INTEGER PRIMARY KEY,
@@ -36,51 +54,29 @@ def init_db():
             dezenas TEXT
         )
     ''')
-    
     conn.commit()
     conn.close()
 
 def get_db_connection():
     return sqlite3.connect(DB_FILE)
 
-# --- FUNÇÕES DE LÓGICA DE NEGÓCIO ---
+# --- FUNÇÕES DE LÓGICA ---
 
 def fetch_latest_results():
-    """
-    Busca resultados atualizados de uma API pública.
-    Nota: APIs públicas podem mudar. Aqui usamos uma comum para loterias.
-    """
     url = "https://loteriascaixa-api.herokuapp.com/api/megasena"
-    
     try:
-        # Busca todos os resultados (ou poderia ser paginado dependendo da API)
-        # Para evitar sobrecarga, em produção idealmente busca-se apenas o último e itera para trás
-        # Mas esta API retorna o último concurso por padrão ou lista.
-        # Vamos usar uma abordagem robusta: Tentar pegar a lista completa ou iterar.
-        # Para este exemplo, vamos assumir que queremos apenas atualizar o banco local.
-        
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            
-            # A estrutura da resposta depende da API. 
-            # Se for uma lista:
-            if isinstance(data, list):
-                draws = data
-            else:
-                # Se for um único objeto (o último), transformamos em lista
-                draws = [data]
+            draws = data if isinstance(data, list) else [data]
                 
             conn = get_db_connection()
             cursor = conn.cursor()
-            
             new_records = 0
             for draw in draws:
                 concurso = draw.get('concurso')
-                data_sorteio = draw.get('data') # Formato esperado DD/MM/AAAA
+                data_sorteio = draw.get('data')
                 dezenas = json.dumps([int(d) for d in draw.get('dezenas', [])])
-                
-                # Converter data para YYYY-MM-DD para facilitar comparação SQL
                 try:
                     dt_obj = datetime.strptime(data_sorteio, "%d/%m/%Y")
                     data_iso = dt_obj.strftime("%Y-%m-%d")
@@ -88,34 +84,26 @@ def fetch_latest_results():
                     data_iso = datetime.now().strftime("%Y-%m-%d")
 
                 try:
-                    cursor.execute('''
-                        INSERT OR IGNORE INTO results (concurso, data_sorteio, dezenas)
-                        VALUES (?, ?, ?)
-                    ''', (concurso, data_iso, dezenas))
+                    cursor.execute('INSERT OR IGNORE INTO results (concurso, data_sorteio, dezenas) VALUES (?, ?, ?)', 
+                                 (concurso, data_iso, dezenas))
                     if cursor.rowcount > 0:
                         new_records += 1
-                except Exception as e:
-                    print(f"Erro ao inserir concurso {concurso}: {e}")
-            
+                except Exception:
+                    pass
             conn.commit()
             conn.close()
             return new_records
     except Exception as e:
-        st.error(f"Erro ao buscar dados na API: {e}")
+        st.error(f"Erro na API: {e}")
         return 0
     return 0
 
 def check_game_matches(game_numbers, start_date_iso):
-    """
-    Verifica acertos para um jogo específico a partir da data de início.
-    Retorna uma lista de resultados onde houve premiação (Quadra, Quina, Sena).
-    """
     conn = get_db_connection()
-    # Busca resultados posteriores à data de início do monitoramento
+    # Pega resultados a partir da data informada
     df = pd.read_sql_query(
         "SELECT concurso, data_sorteio, dezenas FROM results WHERE data_sorteio >= ? ORDER BY data_sorteio DESC",
-        conn,
-        params=(start_date_iso,)
+        conn, params=(start_date_iso,)
     )
     conn.close()
     
@@ -127,7 +115,8 @@ def check_game_matches(game_numbers, start_date_iso):
         hits = game_set.intersection(draw_numbers)
         num_hits = len(hits)
         
-        if num_hits >= 4: # Filtra apenas se ganhou algo (Quadra ou superior)
+        # ALTERAÇÃO AQUI: Agora exibe se tiver pelo menos 1 acerto
+        if num_hits > 0:
             matches_found.append({
                 'concurso': row['concurso'],
                 'data': row['data_sorteio'],
@@ -135,139 +124,191 @@ def check_game_matches(game_numbers, start_date_iso):
                 'dezenas_sorteadas': sorted(list(draw_numbers)),
                 'dezenas_acertadas': sorted(list(hits))
             })
-            
     return matches_found
 
-# --- INTERFACE DO USUÁRIO ---
+# --- GERENCIAMENTO DE ESTADO PARA SELEÇÃO DE NÚMEROS ---
+def toggle_number(num):
+    if 'selected_numbers' not in st.session_state:
+        st.session_state.selected_numbers = []
+    
+    if num in st.session_state.selected_numbers:
+        st.session_state.selected_numbers.remove(num)
+    else:
+        if len(st.session_state.selected_numbers) < 20:
+            st.session_state.selected_numbers.append(num)
+        else:
+            st.toast("Limite máximo de 20 números atingido!", icon="⚠️")
+
+def clear_selection():
+    st.session_state.selected_numbers = []
+
+# --- INTERFACE PRINCIPAL ---
 
 def main():
     init_db()
     
-    st.title("🎱 Monitor de Jogos da Mega-Sena")
+    if 'selected_numbers' not in st.session_state:
+        st.session_state.selected_numbers = []
     
-    # Sidebar para adicionar novo jogo
+    st.title("🎱 Monitor Mega-Sena")
+    
+    # --- SIDEBAR (Cadastro com Grid) ---
     with st.sidebar:
-        st.header("Novo Monitoramento")
+        st.header("Novo Jogo")
+        st.write("Clique para selecionar (Min: 6):")
         
-        with st.form("new_game_form"):
-            st.write("Escolha 6 números:")
-            cols = st.columns(3)
-            nums = []
-            for i in range(6):
-                # Inputs numéricos de 1 a 60
-                val = cols[i % 3].number_input(f"Nº {i+1}", min_value=1, max_value=60, step=1, key=f"n{i}")
-                nums.append(val)
-            
-            start_date = st.date_input("Verificar a partir de:", datetime.now())
-            
-            submitted = st.form_submit_button("Cadastrar Jogo")
-            
-            if submitted:
-                # Validação simples
-                if len(set(nums)) < 6:
-                    st.error("Os números não podem ser repetidos.")
-                else:
-                    nums_sorted = sorted(list(set(nums)))
-                    nums_json = json.dumps(nums_sorted)
-                    start_date_iso = start_date.strftime("%Y-%m-%d")
-                    
-                    conn = get_db_connection()
-                    conn.execute("INSERT INTO tracked_games (numbers, start_date, created_at) VALUES (?, ?, ?)",
-                                 (nums_json, start_date_iso, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-                    conn.commit()
-                    conn.close()
-                    st.success("Jogo cadastrado com sucesso!")
-                    time.sleep(1) # Pequena pausa para refresh visual
-                    st.rerun()
+        grid_container = st.container(border=True)
+        with grid_container:
+            for row in range(6):
+                cols = st.columns(10)
+                for col_idx in range(10):
+                    num = (row * 10) + col_idx + 1
+                    with cols[col_idx]:
+                        is_selected = num in st.session_state.selected_numbers
+                        btn_type = "primary" if is_selected else "secondary"
+                        st.button(
+                            f"{num:02d}", 
+                            key=f"btn_{num}", 
+                            type=btn_type, 
+                            on_click=toggle_number, 
+                            args=(num,)
+                        )
+
+        qtd_selecionada = len(st.session_state.selected_numbers)
+        st.markdown(f"**Selecionados:** {qtd_selecionada} / 20")
+        st.text(f"{sorted(st.session_state.selected_numbers)}")
+        
+        c_clear, c_dummy = st.columns([1, 2])
+        if c_clear.button("Limpar", on_click=clear_selection):
+            pass
 
         st.divider()
-        if st.button("🔄 Forçar Atualização da Base de Dados"):
-            with st.spinner("Buscando novos resultados na Caixa..."):
+
+        start_date = st.date_input("Verificar a partir de:", datetime.now())
+        
+        if st.button("💾 Cadastrar Jogo", type="primary", use_container_width=True):
+            if qtd_selecionada < 6:
+                st.error("Selecione pelo menos 6 números.")
+            else:
+                nums_sorted = sorted(st.session_state.selected_numbers)
+                nums_json = json.dumps(nums_sorted)
+                start_date_iso = start_date.strftime("%Y-%m-%d")
+                
+                conn = get_db_connection()
+                conn.execute("INSERT INTO tracked_games (numbers, start_date, created_at) VALUES (?, ?, ?)",
+                                (nums_json, start_date_iso, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                conn.commit()
+                conn.close()
+                
+                st.success("Cadastrado!")
+                clear_selection()
+                time.sleep(1)
+                st.rerun()
+
+        st.divider()
+        if st.button("🔄 Atualizar Base de Dados"):
+            with st.spinner("Atualizando..."):
                 count = fetch_latest_results()
             if count > 0:
-                st.success(f"{count} novos sorteios baixados!")
+                st.success(f"{count} novos!")
             else:
-                st.info("Base de dados já está atualizada ou API indisponível.")
+                st.info("Base atualizada.")
 
-    # Área Principal: Listagem dos Jogos
+    # --- ÁREA PRINCIPAL (Visualização) ---
     
-    # Abas para separar ativos de inativos
     tab1, tab2 = st.tabs(["Jogos Ativos", "Jogos Parados"])
     
     conn = get_db_connection()
-    df_games = pd.read_sql_query("SELECT * FROM tracked_games", conn)
+    df_games = pd.read_sql_query("SELECT * FROM tracked_games ORDER BY id DESC", conn)
     conn.close()
     
-    # Processamento para exibição
     if not df_games.empty:
-        # Converter string JSON de volta para lista
         df_games['numbers_list'] = df_games['numbers'].apply(json.loads)
         
-        # Separar ativos e inativos
         active_games = df_games[df_games['active'] == 1]
         stopped_games = df_games[df_games['active'] == 0]
         
-        # --- TAB 1: ATIVOS ---
         with tab1:
             if active_games.empty:
-                st.info("Nenhum jogo ativo no momento.")
+                st.info("Nenhum jogo ativo.")
             else:
                 for idx, row in active_games.iterrows():
                     game_id = row['id']
                     numbers = row['numbers_list']
                     start_date = row['start_date']
                     
-                    # Container para o cartão do jogo
                     with st.container(border=True):
-                        c1, c2, c3 = st.columns([2, 4, 1])
-                        
+                        c1, c2, c3 = st.columns([2, 5, 1])
                         with c1:
                             st.caption(f"ID: {game_id} | Início: {start_date}")
-                            st.markdown(f"### {str(numbers)}")
-                            
+                            st.markdown(f"**{len(numbers)} Dezenas**")
+                            st.markdown(" ".join([f"`{n:02d}`" for n in numbers]))
+                        
                         with c2:
-                            # Verificar resultados
                             matches = check_game_matches(numbers, start_date)
                             if matches:
-                                st.warning(f"⚠️ {len(matches)} sorteio(s) premiado(s) encontrado(s)!")
-                                with st.expander("Ver Detalhes dos Acertos"):
-                                    for m in matches:
-                                        st.markdown(f"**Concurso {m['concurso']} ({m['data']})**")
-                                        st.write(f"Acertos: {m['acertos']} - {m['dezenas_acertadas']}")
-                            else:
-                                st.success("Nenhuma premiação encontrada até agora.")
+                                # Verifica se houve ALGUM prêmio real
+                                wins = [m for m in matches if m['acertos'] >= 4]
                                 
+                                if wins:
+                                    st.error(f"🏆 PARABÉNS! {len(wins)} prêmio(s) encontrado(s)!")
+                                else:
+                                    st.info(f"🔎 {len(matches)} sorteio(s) com acertos (sem prêmio).")
+
+                                with st.expander("Ver Detalhes dos Sorteios"):
+                                    for m in matches:
+                                        acertos = m['acertos']
+                                        
+                                        # Lógica de exibição do prêmio
+                                        if acertos == 6:
+                                            texto_premio = "🏆 SENA (Vencedor)"
+                                            cor = ":red"
+                                        elif acertos == 5:
+                                            texto_premio = "🥈 QUINA"
+                                            cor = ":orange"
+                                        elif acertos == 4:
+                                            texto_premio = "🥉 QUADRA"
+                                            cor = ":orange"
+                                        else:
+                                            texto_premio = "🎯 Não Premiado"
+                                            cor = ":grey"
+
+                                        st.markdown(f"**Concurso {m['concurso']} ({m['data']})**")
+                                        st.markdown(f"{cor}[{texto_premio}] - Você acertou **{acertos}** números.")
+                                        st.caption(f"Seus acertos: {m['dezenas_acertadas']}")
+                                        st.divider()
+                            else:
+                                st.write("Nenhum acerto registrado neste período.")
+                        
                         with c3:
-                            st.write("") # Espaçamento
-                            if st.button("Parar", key=f"stop_{game_id}", type="primary"):
+                            st.write("")
+                            if st.button("Arquivar", key=f"stop_{game_id}"):
                                 conn = get_db_connection()
                                 conn.execute("UPDATE tracked_games SET active = 0 WHERE id = ?", (game_id,))
                                 conn.commit()
                                 conn.close()
                                 st.rerun()
 
-        # --- TAB 2: PARADOS ---
         with tab2:
             if stopped_games.empty:
                 st.write("Nenhum jogo arquivado.")
             else:
                 for idx, row in stopped_games.iterrows():
                     game_id = row['id']
-                    numbers = row['numbers_list']
-                    start_date = row['start_date']
-                    
                     with st.container(border=True):
-                        st.caption(f"ID: {game_id} | Início: {start_date} (Parado)")
-                        st.text(f"Números: {numbers}")
-                        if st.button("Reativar", key=f"reactivate_{game_id}"):
-                            conn = get_db_connection()
-                            conn.execute("UPDATE tracked_games SET active = 1 WHERE id = ?", (game_id,))
-                            conn.commit()
-                            conn.close()
-                            st.rerun()
-
+                        c1, c2 = st.columns([6, 1])
+                        with c1:
+                            st.caption(f"ID: {game_id} (Arquivado)")
+                            st.text(f"{row['numbers_list']}")
+                        with c2:
+                            if st.button("Reativar", key=f"react_{game_id}"):
+                                conn = get_db_connection()
+                                conn.execute("UPDATE tracked_games SET active = 1 WHERE id = ?", (game_id,))
+                                conn.commit()
+                                conn.close()
+                                st.rerun()
     else:
-        st.info("Nenhum jogo cadastrado. Utilize a barra lateral para começar.")
+        st.info("Utilize o painel lateral para cadastrar seus jogos.")
 
 if __name__ == "__main__":
     main()
