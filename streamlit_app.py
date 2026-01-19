@@ -25,15 +25,99 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# --- SISTEMA DE TEMAS E LAYOUT (CSS INJETADO) ---
+def inject_custom_css(theme_mode, is_mobile):
+    """
+    Controla o visual (Claro/Escuro) e adaptações Mobile via CSS
+    """
+    # Cores baseadas no modo
+    if theme_mode == "Escuro":
+        bg_color = "#0e1117"
+        text_color = "#fafafa"
+        card_bg = "#262730"
+        card_border = "#4c4c4c"
+    else:
+        bg_color = "#ffffff"
+        text_color = "#000000"
+        card_bg = "#f8f9fa"
+        card_border = "#dee2e6"
+
+    # Ajustes Mobile
+    if is_mobile:
+        padding_top = "2rem"
+        font_size_checkbox = "18px" # Maior para dedo
+        col_align = "center"
+    else:
+        padding_top = "5rem"
+        font_size_checkbox = "14px"
+        col_align = "center"
+
+    st.markdown(f"""
+    <style>
+        /* Força Cores do Tema (Hack para sobrepor tema do sistema) */
+        .stApp {{
+            background-color: {bg_color};
+            color: {text_color};
+        }}
+        
+        /* Cards de Métricas */
+        .metric-card {{
+            background-color: {card_bg};
+            border: 1px solid {card_border};
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }}
+        
+        /* Bolinhas das Loterias */
+        .ball {{ 
+            display: inline-block; 
+            width: 35px; height: 35px; 
+            line-height: 35px; 
+            border-radius: 50%; 
+            color: white; 
+            text-align: center; 
+            font-weight: bold; 
+            font-size: 15px; 
+            margin: 3px; 
+            box-shadow: 1px 1px 2px rgba(0,0,0,0.3); 
+        }}
+        .ball-megasena {{ background-color: #209869; }}
+        .ball-quina {{ background-color: #260085; }}
+        .ball-lotofacil {{ background-color: #930089; }}
+
+        /* Ajustes de Grade e Checkbox */
+        div[data-testid="stColumn"] {{
+            text-align: {col_align};
+        }}
+        
+        /* Aumenta área de clique no mobile */
+        label[data-testid="stCheckbox"] {{
+            font-size: {font_size_checkbox} !important;
+            padding: 5px;
+            width: 100%;
+            justify-content: center;
+        }}
+        
+        /* ROI Cores */
+        .roi-positive {{ color: #28a745; font-weight: bold; font-size: 1.2em; }}
+        .roi-negative {{ color: #dc3545; font-weight: bold; font-size: 1.2em; }}
+    </style>
+    """, unsafe_allow_html=True)
+
 # --- Constantes e Configurações ---
 DB_FILE = 'loterias.db'
 
-GAME_CONFIG = {
+# Configurações Padrão
+BASE_CONFIG = {
     "Mega-Sena": {
         "slug": "megasena",
         "url_zip": "https://servicebus2.caixa.gov.br/portaldeloterias/api/resultados/download?modalidade=Mega-Sena",
         "range": 60, "draw": 6, "cost": 5.00,
-        "min_win": 4, "cols_grid": 10,
+        "min_win": 4, 
+        "cols_pc": 10, "cols_mobile": 5, # Diferenciação PC vs Mobile
         "labels": {4: "Quadra", 5: "Quina", 6: "Sena"},
         "est_prize": {4: 1000, 5: 50000, 6: 15000000}
     },
@@ -41,7 +125,8 @@ GAME_CONFIG = {
         "slug": "quina",
         "url_zip": "https://servicebus2.caixa.gov.br/portaldeloterias/api/resultados/download?modalidade=Quina",
         "range": 80, "draw": 5, "cost": 2.50,
-        "min_win": 2, "cols_grid": 10,
+        "min_win": 2, 
+        "cols_pc": 10, "cols_mobile": 5,
         "labels": {2: "Duque", 3: "Terno", 4: "Quadra", 5: "Quina"},
         "est_prize": {2: 4.00, 3: 100, 4: 8000, 5: 5000000}
     },
@@ -49,26 +134,12 @@ GAME_CONFIG = {
         "slug": "lotofacil",
         "url_zip": "https://servicebus2.caixa.gov.br/portaldeloterias/api/resultados/download?modalidade=Lotofacil",
         "range": 25, "draw": 15, "cost": 3.00,
-        "min_win": 11, "cols_grid": 5,
+        "min_win": 11, 
+        "cols_pc": 5, "cols_mobile": 5, # Lotofacil ja é pequena
         "labels": {11: "11 pts", 12: "12 pts", 13: "13 pts", 14: "14 pts", 15: "15 pts"},
         "est_prize": {11: 6, 12: 12, 13: 30, 14: 1500, 15: 1500000}
     }
 }
-
-# --- CSS Personalizado ---
-st.markdown("""
-<style>
-    .ball { display: inline-block; width: 32px; height: 32px; line-height: 32px; border-radius: 50%; color: white; text-align: center; font-weight: bold; font-size: 14px; margin: 2px; }
-    .ball-megasena { background-color: #209869; }
-    .ball-quina { background-color: #260085; }
-    .ball-lotofacil { background-color: #930089; }
-    .metric-card { background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 15px; border-radius: 8px; text-align: center; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .roi-positive { color: #28a745; font-weight: bold; font-size: 1.2em; }
-    .roi-negative { color: #dc3545; font-weight: bold; font-size: 1.2em; }
-    div[data-testid="stColumn"] { text-align: center; }
-    label[data-testid="stCheckbox"] { padding-right: 0px; }
-</style>
-""", unsafe_allow_html=True)
 
 # --- Banco de Dados (SQLite) ---
 
@@ -89,7 +160,7 @@ def init_db():
 
 def db_save_draws(df, game_name):
     conn = sqlite3.connect(DB_FILE)
-    cfg = GAME_CONFIG[game_name]
+    cfg = BASE_CONFIG[game_name]
     for i in range(cfg['draw'] + 1, 16):
         df[f'D{i}'] = 0
         
@@ -153,7 +224,7 @@ def normalize_text(text):
     return unicodedata.normalize('NFKD', text).encode('ASCII', 'ignore').decode('ASCII').lower()
 
 def process_dataframe(df, game_name):
-    cfg = GAME_CONFIG[game_name]
+    cfg = BASE_CONFIG[game_name]
     
     start_row = -1
     for i in range(min(20, len(df))):
@@ -204,7 +275,7 @@ def process_dataframe(df, game_name):
         return pd.DataFrame()
 
 def download_update_data(game_name):
-    cfg = GAME_CONFIG[game_name]
+    cfg = BASE_CONFIG[game_name]
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
         response = requests.get(cfg['url_zip'], headers=headers, verify=False, timeout=15)
@@ -225,13 +296,14 @@ def download_update_data(game_name):
     return False, "Dados inválidos."
 
 # --- Funções Inteligentes ---
+
 def check_filters(numbers):
     pares = len([n for n in numbers if n % 2 == 0])
     if pares == 0 or pares == len(numbers): return False
     return True
 
 def generate_smart_games(game_name, qtd, num_dezenas, fixos=[]):
-    cfg = GAME_CONFIG[game_name]
+    cfg = BASE_CONFIG[game_name]
     pool = [n for n in range(1, cfg['range'] + 1) if n not in fixos]
     games = []
     tentativas = 0
@@ -247,7 +319,7 @@ def generate_smart_games(game_name, qtd, num_dezenas, fixos=[]):
     return games
 
 def calculate_roi(df_history, user_games, game_name):
-    cfg = GAME_CONFIG[game_name]
+    cfg = BASE_CONFIG[game_name]
     total_spent = sum(g['cost'] for g in user_games)
     total_won = 0
     wins_count = {k:0 for k in cfg['labels'].keys()}
@@ -267,7 +339,7 @@ def calculate_roi(df_history, user_games, game_name):
     return total_spent, total_won, wins_count
 
 def run_backtest(df, numbers, game_name):
-    cfg = GAME_CONFIG[game_name]
+    cfg = BASE_CONFIG[game_name]
     cols_draw = [f'D{i}' for i in range(1, cfg['draw'] + 1)]
     game_set = set(numbers)
     history = []
@@ -288,17 +360,10 @@ def run_backtest(df, numbers, game_name):
     return history, total_won
 
 def calculate_hits(df, game_nums, start_date, game_name):
-    """
-    Verifica acertos a partir de uma data dinâmica
-    """
-    cfg = GAME_CONFIG[game_name]
+    cfg = BASE_CONFIG[game_name]
     if df.empty: return []
-    
-    try:
-        # Garante que start_date seja datetime (pode vir como date do st.date_input)
-        start_dt = pd.to_datetime(start_date)
-    except: 
-        start_dt = df['Data'].min()
+    try: start_dt = pd.to_datetime(start_date)
+    except: start_dt = df['Data'].min()
     
     df_valid = df[df['Data'] >= start_dt].copy()
     hits = []
@@ -309,7 +374,6 @@ def calculate_hits(df, game_nums, start_date, game_name):
         draw_nums = {row[c] for c in cols_draw}
         matches = game_set.intersection(draw_nums)
         qtd = len(matches)
-        
         if qtd > 0:
             hits.append({
                 "Concurso": row['Concurso'],
@@ -318,16 +382,32 @@ def calculate_hits(df, game_nums, start_date, game_name):
                 "Dezenas Sorteadas": sorted(list(draw_nums)),
                 "Seus Acertos": sorted(list(matches))
             })
-    
     hits.sort(key=lambda x: x['Acertos'], reverse=True)
     return hits
 
 # --- INTERFACE ---
-st.sidebar.title("Loterias Pro Ultimate")
-selected_game = st.sidebar.selectbox("Modalidade", list(GAME_CONFIG.keys()))
-current_cfg = GAME_CONFIG[selected_game]
 
-# Inicializa Session State para controle de Loop
+# 1. BARRA LATERAL (Configurações)
+st.sidebar.title("Loterias Ultimate")
+
+# --- NOVO: SELETOR DE MODO ---
+st.sidebar.markdown("### ⚙️ Visualização")
+layout_mode = st.sidebar.radio("Dispositivo:", ["🖥️ PC", "📱 Celular"], horizontal=True)
+theme_mode = st.sidebar.radio("Tema:", ["Escuro", "Claro"], horizontal=True)
+
+# Aplica configurações de visual
+is_mobile = (layout_mode == "📱 Celular")
+inject_custom_css(theme_mode, is_mobile)
+
+# Define seletor de modalidade
+selected_game = st.sidebar.selectbox("Modalidade", list(BASE_CONFIG.keys()))
+current_cfg = BASE_CONFIG[selected_game]
+
+# Configura colunas baseado no modo
+active_cols_grid = current_cfg['cols_mobile'] if is_mobile else current_cfg['cols_pc']
+
+# --- FIM CONFIGURAÇÕES VISUAIS ---
+
 if 'last_processed_file' not in st.session_state:
     st.session_state['last_processed_file'] = None
 
@@ -428,10 +508,15 @@ elif page == "📝 Meus Jogos":
             custo = c2.number_input("Custo (R$)", value=current_cfg['cost'], step=0.5)
             st.markdown("---")
             sel_nums = []
-            cols = st.columns(current_cfg['cols_grid'])
+            
+            # --- GRID RESPONSIVO (Baseado no layout_mode) ---
+            cols = st.columns(active_cols_grid)
             for i in range(1, current_cfg['range']+1):
-                idx = (i-1) % current_cfg['cols_grid']
-                if cols[idx].checkbox(f"{i:02d}", key=f"v_{i}"): sel_nums.append(i)
+                idx = (i-1) % active_cols_grid
+                # Ajusta label para mobile se necessário
+                label = f"{i:02d}"
+                if cols[idx].checkbox(label, key=f"v_{i}"): sel_nums.append(i)
+            
             if st.form_submit_button("Salvar Jogo", type="primary"):
                 if len(sel_nums) < current_cfg['draw']: st.error("Números insuficientes.")
                 else:
@@ -448,33 +533,18 @@ elif page == "📝 Meus Jogos":
             c1.markdown("".join([f'<span class="ball ball-{current_cfg["slug"]}">{n}</span>' for n in g['nums']]), unsafe_allow_html=True)
             if c2.button("🗑️", key=f"d{g['id']}"): db_delete_user_game(g['id']); st.rerun()
             
-            # --- ÁREA DE CONFERÊNCIA ATUALIZADA ---
             check = c3.toggle("Conferir", key=f"c{g['id']}")
             if check:
-                # Seletor de Data de Início da Conferência
-                st.caption("Configurações da Conferência:")
-                
-                # Tenta converter a data salva para datetime, senão usa hoje
-                try:
-                    default_date = datetime.strptime(g['date'], "%Y-%m-%d")
-                except:
-                    default_date = datetime.today()
-                    
-                check_start_date = st.date_input(
-                    "Conferir a partir de:", 
-                    value=default_date,
-                    format="DD/MM/YYYY",
-                    key=f"dt_chk_{g['id']}"
-                )
+                st.caption("Configurações:")
+                try: default_date = datetime.strptime(g['date'], "%Y-%m-%d")
+                except: default_date = datetime.today()
+                check_start_date = st.date_input("Início:", value=default_date, format="DD/MM/YYYY", key=f"dt_chk_{g['id']}")
 
-                if df_data.empty: 
-                    st.warning("Base vazia.")
+                if df_data.empty: st.warning("Base vazia.")
                 else:
-                    # Passa a data selecionada no input, não a gravada no banco
                     results = calculate_hits(df_data, g['nums'], check_start_date, selected_game)
-                    
                     if results:
-                        st.markdown(f"**{len(results)} sorteios com acertos encontrados:**")
+                        st.markdown(f"**{len(results)} acertos:**")
                         for r in results:
                             qtd = r['Acertos']
                             if qtd == current_cfg['draw']: color = "#28a745"
@@ -482,12 +552,11 @@ elif page == "📝 Meus Jogos":
                             else: color = "#6c757d"
                             
                             st.markdown(f"""
-                                <div style='border-left:4px solid {color};padding-left:8px;margin:4px;font-size:0.9em;background:#f9f9f9'>
+                                <div style='border-left:4px solid {color};padding-left:8px;margin:4px;font-size:0.9em;background:{'#333' if theme_mode=='Escuro' else '#f9f9f9'}'>
                                     <b>{qtd} acertos</b> em {r['Data']} (Conc {r['Concurso']})<br>
-                                    <span style='color:grey'>Sorteio: {r['Dezenas Sorteadas']}</span><br>
-                                    <span style='color:{color};font-weight:bold'>Seus: {r['Seus Acertos']}</span>
+                                    <span style='color:grey'>Sorteio: {r['Dezenas Sorteadas']}</span>
                                 </div>""", unsafe_allow_html=True)
-                    else: st.info("Nenhum acerto neste período.")
+                    else: st.info("Nada encontrado.")
         st.divider()
 
 elif page == "🔮 Simulador":
@@ -495,10 +564,12 @@ elif page == "🔮 Simulador":
     if df_data.empty: st.warning("Base vazia.")
     else:
         sel_nums = []
-        st.subheader("Escolha seu jogo para testar na história:")
-        cols = st.columns(current_cfg['cols_grid'])
+        st.subheader("Escolha seu jogo:")
+        
+        # Grid Responsivo
+        cols = st.columns(active_cols_grid)
         for i in range(1, current_cfg['range']+1):
-            idx = (i-1) % current_cfg['cols_grid']
+            idx = (i-1) % active_cols_grid
             if cols[idx].checkbox(f"{i}", key=f"sim_{i}"): sel_nums.append(i)
         
         if st.button("Simular no Passado"):
@@ -569,7 +640,8 @@ elif page == "📊 Análise":
                 }, hide_index=True)
                 
             with tab2:
-                cols_grid = current_cfg['cols_grid']
+                # Usa grid do config (se mobile ou pc)
+                cols_grid = active_cols_grid
                 rows_grid = (current_cfg['range'] // cols_grid) + 1
                 z = np.zeros((rows_grid, cols_grid))
                 txt = [["" for _ in range(cols_grid)] for _ in range(rows_grid)]
@@ -582,7 +654,8 @@ elif page == "📊 Análise":
                             txt[r][c] = str(num)
                         else: z[r][c] = None
                 fig = go.Figure(data=go.Heatmap(z=z, text=txt, texttemplate="%{text}", colorscale='Greens', xgap=2, ygap=2))
-                fig.update_layout(yaxis=dict(autorange="reversed", showticklabels=False), xaxis=dict(showticklabels=False))
+                fig.update_layout(yaxis=dict(autorange="reversed", showticklabels=False), xaxis=dict(showticklabels=False), 
+                                  paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig, use_container_width=True)
                 
             with tab3:
