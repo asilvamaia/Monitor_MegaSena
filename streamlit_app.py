@@ -9,7 +9,7 @@ import urllib3
 import zipfile
 import itertools
 import unicodedata
-import json  # <--- FALTAVA ESTA LINHA
+import json
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
@@ -90,7 +90,6 @@ def init_db():
 def db_save_draws(df, game_name):
     conn = sqlite3.connect(DB_FILE)
     cfg = GAME_CONFIG[game_name]
-    # Normaliza para 15 colunas
     for i in range(cfg['draw'] + 1, 16):
         df[f'D{i}'] = 0
         
@@ -119,7 +118,6 @@ def db_get_draws(game_name):
 def db_save_user_game(game_type, name, numbers, cost):
     conn = sqlite3.connect(DB_FILE)
     gid = datetime.now().strftime("%Y%m%d%H%M%S%f")
-    # AQUI ESTAVA O ERRO: json.dumps precisa do import json
     nums_str = json.dumps(sorted(numbers))
     conn.execute("INSERT INTO user_games VALUES (?,?,?,?,?,?)", 
               (gid, game_type, name, nums_str, datetime.now().strftime('%Y-%m-%d'), cost))
@@ -289,6 +287,41 @@ def run_backtest(df, numbers, game_name):
             })
     return history, total_won
 
+def calculate_hits(df, game_nums, start_date, game_name):
+    """
+    Verifica acertos a partir de uma data dinâmica
+    """
+    cfg = GAME_CONFIG[game_name]
+    if df.empty: return []
+    
+    try:
+        # Garante que start_date seja datetime (pode vir como date do st.date_input)
+        start_dt = pd.to_datetime(start_date)
+    except: 
+        start_dt = df['Data'].min()
+    
+    df_valid = df[df['Data'] >= start_dt].copy()
+    hits = []
+    game_set = set(game_nums)
+    cols_draw = [f'D{i}' for i in range(1, cfg['draw'] + 1)]
+    
+    for _, row in df_valid.iterrows():
+        draw_nums = {row[c] for c in cols_draw}
+        matches = game_set.intersection(draw_nums)
+        qtd = len(matches)
+        
+        if qtd > 0:
+            hits.append({
+                "Concurso": row['Concurso'],
+                "Data": row['Data'].strftime('%d/%m/%Y'),
+                "Acertos": qtd,
+                "Dezenas Sorteadas": sorted(list(draw_nums)),
+                "Seus Acertos": sorted(list(matches))
+            })
+    
+    hits.sort(key=lambda x: x['Acertos'], reverse=True)
+    return hits
+
 # --- INTERFACE ---
 st.sidebar.title("Loterias Pro Ultimate")
 selected_game = st.sidebar.selectbox("Modalidade", list(GAME_CONFIG.keys()))
@@ -414,22 +447,47 @@ elif page == "📝 Meus Jogos":
             c1.markdown(f"**{g['nome']}**")
             c1.markdown("".join([f'<span class="ball ball-{current_cfg["slug"]}">{n}</span>' for n in g['nums']]), unsafe_allow_html=True)
             if c2.button("🗑️", key=f"d{g['id']}"): db_delete_user_game(g['id']); st.rerun()
-            if c3.toggle("Conferir", key=f"c{g['id']}"):
-                if df_data.empty: st.warning("Sem base.")
+            
+            # --- ÁREA DE CONFERÊNCIA ATUALIZADA ---
+            check = c3.toggle("Conferir", key=f"c{g['id']}")
+            if check:
+                # Seletor de Data de Início da Conferência
+                st.caption("Configurações da Conferência:")
+                
+                # Tenta converter a data salva para datetime, senão usa hoje
+                try:
+                    default_date = datetime.strptime(g['date'], "%Y-%m-%d")
+                except:
+                    default_date = datetime.today()
+                    
+                check_start_date = st.date_input(
+                    "Conferir a partir de:", 
+                    value=default_date,
+                    format="DD/MM/YYYY",
+                    key=f"dt_chk_{g['id']}"
+                )
+
+                if df_data.empty: 
+                    st.warning("Base vazia.")
                 else:
-                    cols_draw = [f'D{i}' for i in range(1, current_cfg['draw']+1)]
-                    my_set = set(g['nums'])
-                    hits = []
-                    for _, row in df_data.iterrows():
-                        draw_set = {row[c] for c in cols_draw}
-                        intersect = my_set.intersection(draw_set)
-                        if len(intersect) > 0: hits.append({"C": row['Concurso'], "D": row['Data'], "H": len(intersect), "N": sorted(list(intersect))})
-                    hits.sort(key=lambda x: x['H'], reverse=True)
-                    if hits:
-                        for h in hits[:5]:
-                            color = "#28a745" if h['H'] == current_cfg['draw'] else "#17a2b8" if h['H'] >= current_cfg['draw']-2 else "#6c757d"
-                            st.markdown(f"<div style='border-left:4px solid {color};padding-left:8px;margin:4px'><b>{h['H']} acertos</b> em {h['D'].strftime('%d/%m/%Y')} (Conc {h['C']})<br>Dezenas: {h['N']}</div>", unsafe_allow_html=True)
-                    else: st.caption("Sem acertos.")
+                    # Passa a data selecionada no input, não a gravada no banco
+                    results = calculate_hits(df_data, g['nums'], check_start_date, selected_game)
+                    
+                    if results:
+                        st.markdown(f"**{len(results)} sorteios com acertos encontrados:**")
+                        for r in results:
+                            qtd = r['Acertos']
+                            if qtd == current_cfg['draw']: color = "#28a745"
+                            elif qtd >= current_cfg['draw']-2: color = "#17a2b8"
+                            else: color = "#6c757d"
+                            
+                            st.markdown(f"""
+                                <div style='border-left:4px solid {color};padding-left:8px;margin:4px;font-size:0.9em;background:#f9f9f9'>
+                                    <b>{qtd} acertos</b> em {r['Data']} (Conc {r['Concurso']})<br>
+                                    <span style='color:grey'>Sorteio: {r['Dezenas Sorteadas']}</span><br>
+                                    <span style='color:{color};font-weight:bold'>Seus: {r['Seus Acertos']}</span>
+                                </div>""", unsafe_allow_html=True)
+                    else: st.info("Nenhum acerto neste período.")
         st.divider()
 
 elif page == "🔮 Simulador":
