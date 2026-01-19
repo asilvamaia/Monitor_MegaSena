@@ -23,131 +23,112 @@ if st.session_state.theme == 'dark':
     bg_color = "#0e1117"
     card_bg = "#262730"
     text_color = "#fafafa"
-    btn_sec_bg = "#262730"
+    btn_bg = "#262730"
     border_color = "#3b3d45"
 else:
     bg_color = "#ffffff"
     card_bg = "#f0f2f6"
     text_color = "#31333F"
-    btn_sec_bg = "#ffffff"
-    border_color = "#e0e0e0"
+    btn_bg = "#ffffff"
+    border_color = "#d6d6d6"
 
-# --- CSS DE ALINHAMENTO E TEMA ---
+# --- CSS LIMPO E ESTÁVEL ---
 st.markdown(f"""
 <style>
-    /* Tema Global */
+    /* Aplica cores do tema */
     .stApp {{
         background-color: {bg_color};
         color: {text_color};
     }}
     
+    /* Remove espaço excessivo no topo */
     .block-container {{
-        padding-top: 2rem;
+        padding-top: 1.5rem;
         padding-left: 0.5rem;
         padding-right: 0.5rem;
-        padding-bottom: 6rem;
+        padding-bottom: 5rem;
     }}
     
-    /* --- CORREÇÃO DO GRID (Força 5 colunas no mobile) --- */
-    /* Isso impede que as colunas quebrem linha, mantendo o grid 5x12 intacto */
-    [data-testid="stHorizontalBlock"] {{
-        flex-wrap: nowrap !important;
-        gap: 2px !important;
-    }}
-    
-    /* Remove margens laterais das colunas para caber na tela */
-    div[data-testid="column"] {{
-        min-width: 0 !important;
-        flex: 1 1 0 !important; 
-        padding: 0 !important;
-    }}
-    
-    /* Botões do Grid Numérico */
+    /* Botões do Grid Numérico (Estilo Touch) */
     div[data-testid="column"] button {{
         width: 100% !important;
-        min-height: 42px !important;
         padding: 0px !important;
-        margin: 2px 0px !important;
-        border-radius: 6px !important;
+        height: 45px !important;
         font-weight: bold;
-        font-size: 14px !important;
-    }}
-    
-    /* --- BOTÕES DO CABEÇALHO --- */
-    /* Classe para os botões pequenos do topo */
-    .header-btn {{
-        width: 100% !important;
-        height: 42px !important;
         border-radius: 8px !important;
-        background-color: {btn_sec_bg} !important;
-        color: {text_color} !important;
-        border: 1px solid {border_color} !important;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        margin-top: 0px !important;
     }}
     
-    /* Remove a margem padrão do H3 para alinhar com os botões */
-    h3 {{
-        padding-top: 0px !important;
-        margin-top: 0px !important;
-        margin-bottom: 0px !important;
-        line-height: 42px !important; /* Mesma altura dos botões */
-    }}
-    
-    /* --- BOTÕES PRINCIPAIS (SALVAR/GERAR) --- */
+    /* Botões Principais (Salvar/Gerar) */
     .stButton button[kind="primary"] {{
-        width: 100%;
-        border-radius: 12px;
-        height: 50px;
-        font-size: 18px;
         background-color: #ff4b4b !important;
         color: white !important;
         border: none;
-        margin-top: 8px; /* Espaço para separar dos inputs */
+        height: 50px;
+        font-size: 16px;
+        border-radius: 10px;
+        margin-top: 5px;
     }}
     
-    /* --- ELEMENTOS GERAIS --- */
+    /* Botões Secundários (Atualizar/Tema) */
+    .icon-btn {{
+        border: 1px solid {border_color};
+        background-color: {btn_bg};
+        color: {text_color};
+        border-radius: 8px;
+        height: 42px;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        cursor: pointer;
+    }}
+    
+    /* Cards e Containers */
     div[data-testid="stExpander"], div[data-testid="stContainer"] {{
         background-color: {card_bg};
-        border-radius: 10px;
         border: 1px solid {border_color};
+        border-radius: 10px;
         color: {text_color};
     }}
     
     /* Abas */
-    .stTabs [data-baseweb="tab-list"] {{ gap: 4px; background: transparent; }}
+    .stTabs [data-baseweb="tab-list"] {{
+        gap: 2px;
+        background-color: transparent;
+    }}
     .stTabs [data-baseweb="tab"] {{
         height: 45px;
         background-color: {card_bg};
-        border-radius: 8px;
+        border-radius: 6px;
         color: {text_color};
         flex: 1;
         padding: 4px;
         font-size: 13px;
+        border: 1px solid {border_color};
     }}
     .stTabs [aria-selected="true"] {{
         background-color: {bg_color};
-        border: 1px solid {border_color};
-        border-bottom: 3px solid #ff4b4b;
+        border-bottom: 2px solid #ff4b4b;
+        font-weight: bold;
     }}
-    
+
     /* Esconde Header Nativo */
     header[data-testid="stHeader"] {{ display: none; }}
     
+    /* Ajuste de Texto */
     h3, p, span, div, label {{ color: {text_color} !important; }}
 </style>
 """, unsafe_allow_html=True)
 
 # --- ÍCONE IOS ---
 def setup_ios_icon():
+    # Link Github Raw (Estável)
     icon_url = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f340.png"
     st.markdown(f"""
         <link rel="apple-touch-icon" href="{icon_url}">
         <meta name="apple-mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-title" content="MegaSena">
+        <meta name="apple-mobile-web-app-title" content="MegaApp">
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     """, unsafe_allow_html=True)
 
@@ -251,33 +232,37 @@ def main():
     if 'selected_numbers' not in st.session_state: st.session_state.selected_numbers = []
 
     # --- CABEÇALHO ALINHADO ---
-    # vertical_alignment="center" garante que botões e texto fiquem na mesma linha imaginária
-    c1, c2, c3 = st.columns([1, 1, 5], vertical_alignment="center") 
+    # Layout: [Botão Atualizar] [Botão Tema] [Título Grande]
+    # vertical_alignment="center" alinha tudo no meio da linha
+    c_btn1, c_btn2, c_title = st.columns([1, 1, 5], vertical_alignment="center")
     
-    with c1:
+    with c_btn1:
         if st.button("🔄", help="Atualizar"):
-            with st.spinner("."):
+            with st.spinner("..."):
                 c = fetch_latest_results()
                 conn = get_db_connection()
                 conn.execute("INSERT OR REPLACE INTO app_config (key, value) VALUES ('last_update', ?)", (datetime.now().strftime("%Y-%m-%d"),))
                 conn.commit(); conn.close()
             st.toast(f"{c} novos!" if c > 0 else "OK!", icon="✅"); time.sleep(0.5); st.rerun()
-            
-    with c2:
-        theme_icon = "🌞" if st.session_state.theme == 'dark' else "🌙"
-        if st.button(theme_icon, on_click=toggle_theme): st.rerun()
 
-    with c3:
+    with c_btn2:
+        theme_icon = "🌞" if st.session_state.theme == 'dark' else "🌙"
+        if st.button(theme_icon):
+            toggle_theme()
+            st.rerun()
+
+    with c_title:
         st.subheader("Mega Mobile")
 
     # --- ABAS ---
     tabs = st.tabs(["📋 Jogos", "📊 Stats", "🎲 Gerar", "⚙️ Config"])
 
+    # ABA JOGOS
     with tabs[0]:
         with st.expander("➕ Novo Jogo", expanded=False):
-            # GRID
+            # GRID SIMPLIFICADO: Usando gap="small" nativo
             for r in range(12):
-                cols = st.columns(5)
+                cols = st.columns(5, gap="small")
                 for c in range(5):
                     n = (r * 5) + c + 1
                     with cols[c]:
@@ -285,12 +270,12 @@ def main():
                         st.button(f"{n:02d}", key=f"n{n}", type=type_Btn, on_click=toggle_num, args=(n,))
             
             st.markdown("---")
-            c_inf, c_clr = st.columns([3, 1], vertical_alignment="center")
-            c_inf.write(f"**Sel: {len(st.session_state.selected_numbers)}**")
-            c_clr.button("Limpar", on_click=lambda: st.session_state.update(selected_numbers=[]))
+            c1, c2 = st.columns([3, 1], vertical_alignment="center")
+            c1.markdown(f"**Sel: {len(st.session_state.selected_numbers)}**")
+            c2.button("Limpar", on_click=lambda: st.session_state.update(selected_numbers=[]))
             
             dt = st.date_input("Início:", date.today())
-            if st.button("💾 SALVAR JOGO", type="primary"):
+            if st.button("💾 SALVAR", type="primary"):
                 if len(st.session_state.selected_numbers) < 6: st.error("Mínimo 6!")
                 else:
                     conn = get_db_connection()
@@ -339,11 +324,12 @@ def main():
                     try: d_val = datetime.strptime(row['start_date'], "%Y-%m-%d").date()
                     except: d_val = date.today()
                     new_d = st.date_input("Nova Data:", d_val, key=f"dd{gid}")
-                    c1, c2 = st.columns(2)
-                    if c1.button("Salvar", key=f"sv{gid}"):
+                    c_sav, c_can = st.columns(2)
+                    if c_sav.button("Salvar", key=f"sv{gid}"):
                         conn=get_db_connection(); conn.execute("UPDATE tracked_games SET start_date=? WHERE id=?",(new_d.strftime("%Y-%m-%d"), gid)); conn.commit(); conn.close(); st.session_state[key_ed]=False; st.rerun()
-                    if c2.button("Cancelar", key=f"cn{gid}"): st.session_state[key_ed]=False; st.rerun()
+                    if c_can.button("Cancelar", key=f"cn{gid}"): st.session_state[key_ed]=False; st.rerun()
 
+    # ABA STATS
     with tabs[1]:
         freq, lag, ctr = get_statistics()
         if freq is not None:
@@ -354,24 +340,25 @@ def main():
             st.bar_chart(freq, color="#ff4b4b", height=200)
         else: st.warning("Atualize a base.")
 
+    # ABA GERADOR
     with tabs[2]:
         c1, c2 = st.columns([1, 2], vertical_alignment="center")
         qtd = c1.number_input("Qtd", 6, 20, 6)
         strat = c2.selectbox("Estratégia", ["Aleatória", "Smart (Quentes)", "Cold (Frias)", "Balanced (Mista)"])
         strat_key = {"Aleatória":"random", "Smart (Quentes)":"smart", "Cold (Frias)":"cold", "Balanced (Mista)":"balanced"}
         
-        # Adiciona um espaço visual para alinhar com os inputs
-        st.write("") 
-        if st.button("🎲 GERAR NÚMEROS", type="primary"):
+        st.write("")
+        if st.button("🎲 GERAR", type="primary"):
             _, _, ctr = get_statistics()
             st.session_state.last_gen = generate_game(qtd, strat_key[strat], ctr)
             
         if 'last_gen' in st.session_state:
             g = st.session_state.last_gen
             st.markdown(" ".join([f"`{x:02d}`" for x in g]))
-            if st.button("💾 Salvar Gerado"):
+            if st.button("💾 Salvar"):
                 conn=get_db_connection(); conn.execute("INSERT INTO tracked_games (numbers, start_date) VALUES (?, ?)", (json.dumps(g), date.today().strftime("%Y-%m-%d"))); conn.commit(); conn.close(); st.toast("Salvo!"); del st.session_state.last_gen; time.sleep(0.5); st.rerun()
 
+    # ABA CONFIG
     with tabs[3]:
         st.info("Backup dos dados")
         conn = get_db_connection()
