@@ -9,6 +9,7 @@ import urllib3
 import zipfile
 import itertools
 import unicodedata
+import json  # <--- FALTAVA ESTA LINHA
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
@@ -89,6 +90,7 @@ def init_db():
 def db_save_draws(df, game_name):
     conn = sqlite3.connect(DB_FILE)
     cfg = GAME_CONFIG[game_name]
+    # Normaliza para 15 colunas
     for i in range(cfg['draw'] + 1, 16):
         df[f'D{i}'] = 0
         
@@ -117,6 +119,7 @@ def db_get_draws(game_name):
 def db_save_user_game(game_type, name, numbers, cost):
     conn = sqlite3.connect(DB_FILE)
     gid = datetime.now().strftime("%Y%m%d%H%M%S%f")
+    # AQUI ESTAVA O ERRO: json.dumps precisa do import json
     nums_str = json.dumps(sorted(numbers))
     conn.execute("INSERT INTO user_games VALUES (?,?,?,?,?,?)", 
               (gid, game_type, name, nums_str, datetime.now().strftime('%Y-%m-%d'), cost))
@@ -154,7 +157,6 @@ def normalize_text(text):
 def process_dataframe(df, game_name):
     cfg = GAME_CONFIG[game_name]
     
-    # 1. Localizador de Cabeçalho (Deep Scan)
     start_row = -1
     for i in range(min(20, len(df))):
         row_values = [normalize_text(x) for x in df.iloc[i].values]
@@ -165,7 +167,6 @@ def process_dataframe(df, game_name):
             
     if start_row >= 0: df = df.iloc[start_row + 1:].copy()
 
-    # 2. Mapa de Colunas
     new_columns = {}
     for col in df.columns:
         col_clean = normalize_text(col).strip()
@@ -179,12 +180,10 @@ def process_dataframe(df, game_name):
                     break
     df.rename(columns=new_columns, inplace=True)
 
-    # 3. Limpeza
     try:
         cols_draw = [f'D{i}' for i in range(1, cfg['draw'] + 1)]
         required = ['Concurso', 'Data'] + cols_draw
         
-        # Fallback posicional se falhar o mapeamento
         if not all(c in df.columns for c in cols_draw):
             if len(df.columns) >= len(required):
                 mapper = {df.columns[0]: 'Concurso', df.columns[1]: 'Data'}
@@ -227,8 +226,7 @@ def download_update_data(game_name):
     except Exception as e: return False, f"Erro: {str(e)}"
     return False, "Dados inválidos."
 
-# --- Funções Inteligentes e Matemáticas ---
-
+# --- Funções Inteligentes ---
 def check_filters(numbers):
     pares = len([n for n in numbers if n % 2 == 0])
     if pares == 0 or pares == len(numbers): return False
@@ -497,27 +495,18 @@ elif page == "📊 Análise":
         if st.button("Processar"):
             df_p = df_data[(df_data['Concurso'] >= ini) & (df_data['Concurso'] <= fim)]
             cols_draw = [f'D{i}' for i in range(1, current_cfg['draw']+1)]
-            
-            # Stats Básicos
-            stats_list = []
-            last_conc = df_data['Concurso'].max()
+            stats = []
             for n in range(1, current_cfg['range']+1):
-                mask_t = np.zeros(len(df_data), dtype=bool)
-                for c in cols_draw: mask_t |= (df_data[c] == n)
-                jogos_t = df_data[mask_t]['Concurso'].values
-                atraso = last_conc - jogos_t[-1] if len(jogos_t) > 0 else last_conc
-                
-                mask_p = np.zeros(len(df_p), dtype=bool)
-                for c in cols_draw: mask_p |= (df_p[c] == n)
-                stats_list.append({"Dezena": n, "Freq": mask_p.sum(), "Atraso": atraso})
-            df_s = pd.DataFrame(stats_list)
+                mask = np.zeros(len(df_p), dtype=bool)
+                for c in cols_draw: mask |= (df_p[c] == n)
+                stats.append({"Dezena": n, "Freq": mask.sum()})
+            df_s = pd.DataFrame(stats)
             
             tab1, tab2, tab3 = st.tabs(["📊 Tabela", "🔥 Heatmap", "📐 Padrões"])
             
             with tab1:
                 st.dataframe(df_s, use_container_width=True, column_config={
                     "Dezena": st.column_config.NumberColumn(format="%d"),
-                    "Atraso": st.column_config.ProgressColumn(format="%d", min_value=0, max_value=int(df_s['Atraso'].max())),
                     "Freq": st.column_config.BarChartColumn(y_min=0, y_max=int(df_s['Freq'].max()))
                 }, hide_index=True)
                 
@@ -542,7 +531,6 @@ elif page == "📊 Análise":
                 df_p['Pares'] = df_p[cols_draw].apply(lambda x: np.sum([n % 2 == 0 for n in x]), axis=1)
                 st.plotly_chart(px.pie(names=["Pares", "Ímpares"], values=[df_p['Pares'].mean(), current_cfg['draw']-df_p['Pares'].mean()], title="Média Par/Ímpar"))
                 
-                # Linhas e Colunas (Mega-Sena)
                 if selected_game == "Mega-Sena":
                     lines_data = []
                     cols_data = []
