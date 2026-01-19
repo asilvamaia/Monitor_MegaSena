@@ -89,7 +89,6 @@ def init_db():
 def db_save_draws(df, game_name):
     conn = sqlite3.connect(DB_FILE)
     cfg = GAME_CONFIG[game_name]
-    # Normaliza para 15 colunas (máximo suportado pelo schema)
     for i in range(cfg['draw'] + 1, 16):
         df[f'D{i}'] = 0
         
@@ -155,6 +154,7 @@ def normalize_text(text):
 def process_dataframe(df, game_name):
     cfg = GAME_CONFIG[game_name]
     
+    # 1. Localizador de Cabeçalho (Deep Scan)
     start_row = -1
     for i in range(min(20, len(df))):
         row_values = [normalize_text(x) for x in df.iloc[i].values]
@@ -165,6 +165,7 @@ def process_dataframe(df, game_name):
             
     if start_row >= 0: df = df.iloc[start_row + 1:].copy()
 
+    # 2. Mapa de Colunas
     new_columns = {}
     for col in df.columns:
         col_clean = normalize_text(col).strip()
@@ -178,10 +179,12 @@ def process_dataframe(df, game_name):
                     break
     df.rename(columns=new_columns, inplace=True)
 
+    # 3. Limpeza
     try:
         cols_draw = [f'D{i}' for i in range(1, cfg['draw'] + 1)]
         required = ['Concurso', 'Data'] + cols_draw
         
+        # Fallback posicional se falhar o mapeamento
         if not all(c in df.columns for c in cols_draw):
             if len(df.columns) >= len(required):
                 mapper = {df.columns[0]: 'Concurso', df.columns[1]: 'Data'}
@@ -224,7 +227,8 @@ def download_update_data(game_name):
     except Exception as e: return False, f"Erro: {str(e)}"
     return False, "Dados inválidos."
 
-# --- Funções Inteligentes ---
+# --- Funções Inteligentes e Matemáticas ---
+
 def check_filters(numbers):
     pares = len([n for n in numbers if n % 2 == 0])
     if pares == 0 or pares == len(numbers): return False
@@ -235,22 +239,14 @@ def generate_smart_games(game_name, qtd, num_dezenas, fixos=[]):
     pool = [n for n in range(1, cfg['range'] + 1) if n not in fixos]
     games = []
     tentativas = 0
-    
-    # Validação de segurança
     if num_dezenas < cfg['draw']: num_dezenas = cfg['draw']
     
     while len(games) < qtd and tentativas < 5000:
         needed = num_dezenas - len(fixos)
         if needed <= len(pool):
-            # Sorteia o que falta
-            rnd_part = list(np.random.choice(pool, needed, replace=False))
-            # Junta com os fixos
-            full_game = sorted(list(fixos) + rnd_part)
-            # Converte para int python
-            full_game = [int(x) for x in full_game]
-            
-            if check_filters(full_game): 
-                games.append(full_game)
+            rnd = sorted(list(fixos) + list(np.random.choice(pool, needed, replace=False)))
+            rnd = [int(x) for x in rnd]
+            if check_filters(rnd): games.append(rnd)
         tentativas += 1
     return games
 
@@ -273,6 +269,27 @@ def calculate_roi(df_history, user_games, game_name):
                 total_won += cfg['est_prize'][hits]
                 wins_count[hits] += 1
     return total_spent, total_won, wins_count
+
+def run_backtest(df, numbers, game_name):
+    cfg = GAME_CONFIG[game_name]
+    cols_draw = [f'D{i}' for i in range(1, cfg['draw'] + 1)]
+    game_set = set(numbers)
+    history = []
+    total_won = 0
+    
+    for _, row in df.iterrows():
+        draw_set = {row[c] for c in cols_draw}
+        hits = len(game_set.intersection(draw_set))
+        if hits >= cfg['min_win']:
+            prize = cfg['est_prize'].get(hits, 0)
+            total_won += prize
+            history.append({
+                "Concurso": row['Concurso'],
+                "Data": row['Data'],
+                "Acertos": hits,
+                "Prêmio Est.": prize
+            })
+    return history, total_won
 
 # --- INTERFACE ---
 st.sidebar.title("Loterias Pro Ultimate")
@@ -328,7 +345,7 @@ with st.sidebar.expander("🔄 Atualizar Dados"):
                     else: st.error("Erro no layout do arquivo")
                 except Exception as e: st.error(f"Erro: {e}")
 
-page = st.sidebar.radio("Navegação", ["🏠 Home", "💸 Dashboard ROI", "📝 Meus Jogos", "🎲 Gerador IA", "📊 Análise"])
+page = st.sidebar.radio("Navegação", ["🏠 Home", "💸 Dashboard ROI", "📝 Meus Jogos", "🔮 Simulador", "🎲 Gerador IA", "📊 Análise"])
 
 # --- PÁGINAS ---
 
@@ -417,14 +434,36 @@ elif page == "📝 Meus Jogos":
                     else: st.caption("Sem acertos.")
         st.divider()
 
+elif page == "🔮 Simulador":
+    st.title("Máquina do Tempo 🕰️")
+    if df_data.empty: st.warning("Base vazia.")
+    else:
+        sel_nums = []
+        st.subheader("Escolha seu jogo para testar na história:")
+        cols = st.columns(current_cfg['cols_grid'])
+        for i in range(1, current_cfg['range']+1):
+            idx = (i-1) % current_cfg['cols_grid']
+            if cols[idx].checkbox(f"{i}", key=f"sim_{i}"): sel_nums.append(i)
+        
+        if st.button("Simular no Passado"):
+            if len(sel_nums) < current_cfg['draw']: st.error("Selecione mais números.")
+            else:
+                hist, cash = run_backtest(df_data, sel_nums, selected_game)
+                if not hist: st.info("❄️ Nunca premiado!")
+                else:
+                    st.success(f"🔥 Premiado {len(hist)} vezes!")
+                    st.metric("Total Acumulado (Estimado)", f"R$ {cash:,.2f}")
+                    df_hist = pd.DataFrame(hist)
+                    df_hist['Data'] = pd.to_datetime(df_hist['Data']).dt.strftime('%d/%m/%Y')
+                    st.dataframe(df_hist, hide_index=True, use_container_width=True)
+
 elif page == "🎲 Gerador IA":
     st.title("Gerador Inteligente")
     tab1, tab2 = st.tabs(["🤖 Palpites IA", "🔒 Fechamentos"])
     with tab1:
         c1, c2, c3 = st.columns([1, 1, 2])
         qtd = c1.number_input("Qtd Jogos", 1, 50, 5)
-        # --- ATUALIZAÇÃO AQUI: CAMPO NUM DEZENAS ---
-        num_dez = c2.number_input("Dezenas/Jogo", value=current_cfg['draw'], min_value=current_cfg['draw'], max_value=20)
+        num_dez = c2.number_input("Dezenas/Jogo", value=current_cfg['draw'], min_value=current_cfg['draw'], max_value=18)
         fix = c3.multiselect("Fixar Dezenas", range(1, current_cfg['range']+1))
         
         if st.button("Gerar"):
@@ -458,27 +497,59 @@ elif page == "📊 Análise":
         if st.button("Processar"):
             df_p = df_data[(df_data['Concurso'] >= ini) & (df_data['Concurso'] <= fim)]
             cols_draw = [f'D{i}' for i in range(1, current_cfg['draw']+1)]
-            stats = []
-            for n in range(1, current_cfg['range']+1):
-                mask = np.zeros(len(df_p), dtype=bool)
-                for c in cols_draw: mask |= (df_p[c] == n)
-                stats.append({"Dezena": n, "Freq": mask.sum()})
-            df_s = pd.DataFrame(stats)
             
-            st.subheader("Mapa de Calor")
-            cols_grid = current_cfg['cols_grid']
-            rows_grid = (current_cfg['range'] // cols_grid) + 1
-            z = np.zeros((rows_grid, cols_grid))
-            txt = [["" for _ in range(cols_grid)] for _ in range(rows_grid)]
-            for r in range(rows_grid):
-                for c in range(cols_grid):
-                    num = r * cols_grid + c + 1
-                    if num <= current_cfg['range']:
-                        val = df_s.loc[df_s['Dezena']==num, 'Freq'].values[0]
-                        z[r][c] = val
-                        txt[r][c] = str(num)
-                    else: z[r][c] = None
-            fig = go.Figure(data=go.Heatmap(z=z, text=txt, texttemplate="%{text}", colorscale='Greens', xgap=2, ygap=2))
-            fig.update_layout(yaxis=dict(autorange="reversed", showticklabels=False), xaxis=dict(showticklabels=False))
-            st.plotly_chart(fig, use_container_width=True)
-            st.bar_chart(df_s.set_index("Dezena"))
+            # Stats Básicos
+            stats_list = []
+            last_conc = df_data['Concurso'].max()
+            for n in range(1, current_cfg['range']+1):
+                mask_t = np.zeros(len(df_data), dtype=bool)
+                for c in cols_draw: mask_t |= (df_data[c] == n)
+                jogos_t = df_data[mask_t]['Concurso'].values
+                atraso = last_conc - jogos_t[-1] if len(jogos_t) > 0 else last_conc
+                
+                mask_p = np.zeros(len(df_p), dtype=bool)
+                for c in cols_draw: mask_p |= (df_p[c] == n)
+                stats_list.append({"Dezena": n, "Freq": mask_p.sum(), "Atraso": atraso})
+            df_s = pd.DataFrame(stats_list)
+            
+            tab1, tab2, tab3 = st.tabs(["📊 Tabela", "🔥 Heatmap", "📐 Padrões"])
+            
+            with tab1:
+                st.dataframe(df_s, use_container_width=True, column_config={
+                    "Dezena": st.column_config.NumberColumn(format="%d"),
+                    "Atraso": st.column_config.ProgressColumn(format="%d", min_value=0, max_value=int(df_s['Atraso'].max())),
+                    "Freq": st.column_config.BarChartColumn(y_min=0, y_max=int(df_s['Freq'].max()))
+                }, hide_index=True)
+                
+            with tab2:
+                cols_grid = current_cfg['cols_grid']
+                rows_grid = (current_cfg['range'] // cols_grid) + 1
+                z = np.zeros((rows_grid, cols_grid))
+                txt = [["" for _ in range(cols_grid)] for _ in range(rows_grid)]
+                for r in range(rows_grid):
+                    for c in range(cols_grid):
+                        num = r * cols_grid + c + 1
+                        if num <= current_cfg['range']:
+                            val = df_s.loc[df_s['Dezena']==num, 'Freq'].values[0]
+                            z[r][c] = val
+                            txt[r][c] = str(num)
+                        else: z[r][c] = None
+                fig = go.Figure(data=go.Heatmap(z=z, text=txt, texttemplate="%{text}", colorscale='Greens', xgap=2, ygap=2))
+                fig.update_layout(yaxis=dict(autorange="reversed", showticklabels=False), xaxis=dict(showticklabels=False))
+                st.plotly_chart(fig, use_container_width=True)
+                
+            with tab3:
+                df_p['Pares'] = df_p[cols_draw].apply(lambda x: np.sum([n % 2 == 0 for n in x]), axis=1)
+                st.plotly_chart(px.pie(names=["Pares", "Ímpares"], values=[df_p['Pares'].mean(), current_cfg['draw']-df_p['Pares'].mean()], title="Média Par/Ímpar"))
+                
+                # Linhas e Colunas (Mega-Sena)
+                if selected_game == "Mega-Sena":
+                    lines_data = []
+                    cols_data = []
+                    for _, row in df_p.iterrows():
+                        nums = [row[c] for c in cols_draw]
+                        lines_data.append(len(set([(n-1)//10 for n in nums])))
+                        cols_data.append(len(set([(n-1)%10 for n in nums])))
+                    c1, c2 = st.columns(2)
+                    c1.plotly_chart(px.histogram(x=lines_data, title="Linhas Ocupadas"), use_container_width=True)
+                    c2.plotly_chart(px.histogram(x=cols_data, title="Colunas Ocupadas"), use_container_width=True)
