@@ -7,6 +7,7 @@ import random
 from collections import Counter
 from datetime import datetime, date
 import time
+import io
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Mega Mobile", layout="centered", page_icon="🎱")
@@ -128,7 +129,6 @@ st.markdown(f"""
 # --- CONFIGURAÇÃO DO ÍCONE IOS (GITHUB RAW) ---
 def setup_ios_icon():
     # Usando o Emoji Oficial do Twitter (Clover) hospedado no GitHub
-    # É um arquivo estático super confiável.
     icon_url = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f340.png"
     
     st.markdown(f"""
@@ -223,7 +223,9 @@ def check_matches(game_nums, start_date):
     df = pd.read_sql_query("SELECT * FROM results WHERE data_sorteio >= ? ORDER BY data_sorteio DESC", conn, params=(start_date,))
     conn.close()
     matches = []
-    g_set = set(game_numbers=game_nums)
+    # --- CORREÇÃO AQUI ---
+    g_set = set(game_nums) # Antes estava set(game_numbers=game_nums)
+    # ---------------------
     for _, row in df.iterrows():
         d_set = set(json.loads(row['dezenas']))
         hits = g_set.intersection(d_set)
@@ -242,11 +244,9 @@ def main():
     if 'selected_numbers' not in st.session_state: st.session_state.selected_numbers = []
 
     # --- CABEÇALHO OTIMIZADO (BOTÕES JUNTOS) ---
-    # Usando colunas aninhadas para juntar os botões
-    c_header_actions, c_header_title = st.columns([2.5, 6]) # 25% para botões, 75% para título
+    c_header_actions, c_header_title = st.columns([2.5, 6]) 
     
     with c_header_actions:
-        # Coloca os dois botões lado a lado com gap pequeno
         b1, b2 = st.columns([1, 1], gap="small")
         with b1:
             if st.button("🔄", help="Atualizar"):
@@ -269,7 +269,7 @@ def main():
     # ABA 1: JOGOS
     with tabs[0]:
         with st.expander("➕ Novo Jogo", expanded=False):
-            # GRID 5 COLUNAS (CSS garante alinhamento)
+            # GRID 5 COLUNAS
             for r in range(12):
                 cols = st.columns(5)
                 for c in range(5):
