@@ -7,101 +7,134 @@ import random
 from collections import Counter
 from datetime import datetime, date
 import time
-import io
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Mega Mobile", layout="centered", page_icon="🎱")
 
-# --- CSS OTIMIZADO PARA CELULAR ---
-st.markdown("""
+# --- GERENCIAMENTO DE TEMA (CLARO/ESCURO) ---
+if 'theme' not in st.session_state:
+    st.session_state.theme = 'dark' # Padrão
+
+def toggle_theme():
+    if st.session_state.theme == 'dark':
+        st.session_state.theme = 'light'
+    else:
+        st.session_state.theme = 'dark'
+
+# Definição das cores baseadas no tema
+if st.session_state.theme == 'dark':
+    bg_color = "#0e1117"
+    card_bg = "#262730"
+    text_color = "#fafafa"
+    btn_sec_bg = "#262730"
+    border_color = "#3b3d45"
+else:
+    bg_color = "#ffffff"
+    card_bg = "#f0f2f6"
+    text_color = "#31333F"
+    btn_sec_bg = "#ffffff"
+    border_color = "#e0e0e0"
+
+# --- CSS DINÂMICO E CORREÇÕES DE LAYOUT ---
+st.markdown(f"""
 <style>
-    .block-container {
-        padding-top: 2rem; /* Menos espaço no topo */
-        padding-left: 0.2rem;
-        padding-right: 0.2rem;
+    /* Aplica o tema ao fundo global */
+    .stApp {{
+        background-color: {bg_color};
+        color: {text_color};
+    }}
+    
+    /* Ajuste fino do container principal para mobile */
+    .block-container {{
+        padding-top: 1rem;
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
         padding-bottom: 6rem;
-    }
+    }}
     
-    /* GRID FORÇADO (5 colunas) */
-    [data-testid="stHorizontalBlock"] {
-        flex-wrap: nowrap !important;
-    }
-    
-    [data-testid="column"] {
-        flex: 1 !important;
-        min-width: 0 !important;
-        padding: 0 1px !important;
-    }
-    
-    /* Botões Numéricos */
-    div[data-testid="stHorizontalBlock"] button {
-        min-height: 42px !important;
-        padding: 0px !important;
-        border-radius: 6px !important;
-        margin-bottom: 4px !important;
-        font-weight: bold;
-        font-size: 14px !important;
+    /* CORREÇÃO DO GRID DE NÚMEROS */
+    /* Garante que os botões dentro das colunas ocupem largura total e altura fixa */
+    div[data-testid="column"] button {{
         width: 100% !important;
-    }
+        min-height: 45px !important;
+        max-height: 45px !important;
+        padding: 0px !important;
+        margin: 2px 0px !important; /* Pequeno espaçamento vertical */
+        font-weight: bold;
+        border-radius: 8px !important;
+    }}
     
-    /* Botões Grandes (Salvar/Gerar) */
-    .stButton button[kind="primary"] {
+    /* Remove espaçamentos laterais excessivos das colunas do Streamlit */
+    div[data-testid="column"] {{
+        padding: 0 2px !important;
+        min-width: 0 !important;
+    }}
+    
+    /* Botões de Ação Principais (Salvar, Gerar) */
+    .stButton button[kind="primary"] {{
         width: 100%;
         border-radius: 12px;
-        height: 52px;
+        height: 50px;
         font-size: 18px;
         font-weight: 600;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         margin-top: 10px;
-    }
+        background-color: #ff4b4b !important;
+        color: white !important;
+        border: none;
+    }}
     
-    /* Botão de Atualizar (Pequeno/Esquerda) */
-    .stButton button[kind="secondary"] {
-        border-radius: 50%; /* Redondo */
-        height: 45px;
-        width: 45px;
-        border: 1px solid #ccc;
-        padding: 0 !important;
-    }
+    /* Botões do Cabeçalho (Atualizar e Tema) */
+    .header-btn button {{
+        background-color: {btn_sec_bg} !important;
+        color: {text_color} !important;
+        border: 1px solid {border_color} !important;
+        border-radius: 8px;
+        height: 40px;
+        width: 100%;
+    }}
+    
+    /* Estilo dos Cards (Expander e Containers) */
+    div[data-testid="stExpander"], div[data-testid="stContainer"] {{
+        background-color: {card_bg};
+        border-radius: 10px;
+        border: 1px solid {border_color};
+        color: {text_color};
+    }}
     
     /* Abas */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 2px;
+    .stTabs [data-baseweb="tab-list"] {{
+        gap: 4px;
         background-color: transparent;
-    }
-    .stTabs [data-baseweb="tab"] {
+    }}
+    .stTabs [data-baseweb="tab"] {{
         height: 45px;
-        white-space: pre-wrap;
-        background-color: #f0f2f6;
+        background-color: {card_bg};
         border-radius: 8px;
-        gap: 2px;
-        padding: 4px;
-        flex: 1; 
+        color: {text_color};
+        flex: 1;
         font-size: 13px;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #ffffff;
-        border: 1px solid #e0e0e0;
+        padding: 4px;
+    }}
+    .stTabs [aria-selected="true"] {{
+        background-color: {bg_color};
+        border: 1px solid {border_color};
         border-bottom: 3px solid #ff4b4b;
         font-weight: bold;
-    }
+    }}
     
-    /* Esconde Header Streamlit */
-    header[data-testid="stHeader"] { display: none; }
+    /* Esconde Header Padrão */
+    header[data-testid="stHeader"] {{ display: none; }}
     
-    /* Ajuste de alinhamento do título com o botão */
-    h3 {
-        padding-top: 10px;
-        margin-bottom: 0px;
-    }
+    /* Ajuste de Texto */
+    h3, p, span, div {{
+        color: {text_color};
+    }}
 </style>
 """, unsafe_allow_html=True)
 
 # --- CONFIGURAÇÃO DO ÍCONE IOS ---
 def setup_ios_icon():
-    # Link direto para um PNG simples (Trevo)
     icon_url = "https://img.icons8.com/color/480/clover--v1.png"
-    
     st.markdown(f"""
         <link rel="apple-touch-icon" href="{icon_url}">
         <meta name="apple-mobile-web-app-capable" content="yes">
@@ -243,12 +276,13 @@ def main():
     
     if 'selected_numbers' not in st.session_state: st.session_state.selected_numbers = []
 
-    # --- CABEÇALHO (BOTÃO NA ESQUERDA) ---
-    # Ajustei a proporção para o botão ficar compacto
-    c_btn, c_title = st.columns([1, 5])
+    # --- CABEÇALHO ---
+    # Colunas: [Atualizar] [Tema] [Título]
+    c_btn1, c_btn2, c_title = st.columns([1.5, 1.5, 6])
     
-    with c_btn:
-        # Botão de Atualizar (Ícone apenas)
+    # Adicionando classe CSS para estilização específica
+    with c_btn1:
+        st.markdown('<div class="header-btn">', unsafe_allow_html=True)
         if st.button("🔄", help="Atualizar Base"):
             with st.spinner("."):
                 count = fetch_latest_results()
@@ -256,34 +290,49 @@ def main():
                 conn.execute("INSERT OR REPLACE INTO app_config (key, value) VALUES ('last_update', ?)", (datetime.now().strftime("%Y-%m-%d"),))
                 conn.commit(); conn.close()
             if count > 0: st.toast(f"{count} novos!", icon="✅")
-            else: st.toast("Atualizado!", icon="👍")
+            else: st.toast("Tudo OK!", icon="👍")
             time.sleep(0.5); st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with c_btn2:
+        st.markdown('<div class="header-btn">', unsafe_allow_html=True)
+        # Ícone muda conforme o tema
+        theme_icon = "🌞" if st.session_state.theme == 'dark' else "🌙"
+        if st.button(theme_icon, on_click=toggle_theme, help="Mudar Tema"):
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     with c_title:
         st.subheader("Mega Mobile")
-        # st.caption removido para limpar visual, pode descomentar se quiser
-        # st.caption("v1.4")
 
     # --- ABAS ---
     tab_games, tab_stats, tab_gen, tab_config = st.tabs(["📋 Jogos", "📊 Stats", "🎲 Gerar", "⚙️ Config"])
 
+    # --- ABA JOGOS ---
     with tab_games:
         with st.expander("➕ Novo Jogo Manual", expanded=False):
+            # Lógica corrigida do Grid:
+            # Usamos st.columns dentro de um loop, e o CSS garante o alinhamento
             cols_per_row = 5
-            for r in range(12):
+            rows = 12 
+            
+            for r in range(rows):
                 cols = st.columns(cols_per_row)
                 for c in range(cols_per_row):
                     num = (r * cols_per_row) + c + 1
                     if num <= 60:
                         with cols[c]:
                             is_sel = num in st.session_state.selected_numbers
+                            # O estilo primary/secondary define a cor (vermelho/cinza)
                             st.button(f"{num:02d}", key=f"b_{num}", 
                                       type="primary" if is_sel else "secondary", 
                                       on_click=toggle_number, args=(num,))
+            
             st.markdown("---")
             c_info, c_clear = st.columns([3, 1])
             c_info.markdown(f"**Selecionados:** {len(st.session_state.selected_numbers)}")
             c_clear.button("Limpar", on_click=clear_selection, use_container_width=True)
+            
             start_date = st.date_input("Início da verificação:", date.today(), key="date_manual")
             if st.button("💾 SALVAR MANUAL", type="primary"):
                 if len(st.session_state.selected_numbers) < 6: st.error("Mínimo 6 números.")
@@ -295,6 +344,7 @@ def main():
                     st.success("Salvo!"); clear_selection(); time.sleep(0.5); st.rerun()
         
         st.write("") 
+        
         conn = get_db_connection()
         df = pd.read_sql_query("SELECT * FROM tracked_games WHERE active=1 ORDER BY id DESC", conn)
         conn.close()
@@ -336,6 +386,7 @@ def main():
                         conn = get_db_connection(); conn.execute("UPDATE tracked_games SET start_date = ? WHERE id = ?", (new_date.strftime("%Y-%m-%d"), game_id)); conn.commit(); conn.close(); st.session_state[edit_key] = False; st.rerun()
                     if st.button("Cancelar", key=f"cn_{game_id}"): st.session_state[edit_key] = False; st.rerun()
 
+    # --- ABA ESTATÍSTICAS ---
     with tab_stats:
         df_stats, df_lag, counter = get_statistics()
         if not df_stats is None:
@@ -348,6 +399,7 @@ def main():
             with st.expander("Ver Tabela Completa"): st.dataframe(df_stats.T, use_container_width=True)
         else: st.warning("Sem dados.")
 
+    # --- ABA GERADOR ---
     with tab_gen:
         c_qtd, c_strat = st.columns([1, 2])
         with c_qtd: qtd_dezenas = st.number_input("Qtd", 6, 20, 6)
@@ -369,6 +421,7 @@ def main():
                 conn.commit(); conn.close()
                 st.toast("Salvo!", icon="✅"); del st.session_state['last_generated']; time.sleep(0.5); st.rerun()
 
+    # --- ABA CONFIG ---
     with tab_config:
         st.header("💾 Backup")
         st.info("Salve seus jogos antes de limpar o celular.")
