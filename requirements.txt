@@ -1,3 +1,7 @@
-streamlit 
-pandas 
+streamlit
+pandas
+numpy
 requests
+plotly
+openpyxl
+lxml
