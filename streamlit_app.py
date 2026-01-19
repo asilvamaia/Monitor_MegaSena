@@ -12,31 +12,31 @@ import io
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Mega Mobile", layout="centered", page_icon="🎱")
 
-# --- CSS OTIMIZADO PARA CELULAR (GRADE FORÇADA) ---
+# --- CSS OTIMIZADO PARA CELULAR ---
 st.markdown("""
 <style>
     .block-container {
-        padding-top: 3rem;
-        padding-left: 0.2rem; /* Margens menores para caber mais */
+        padding-top: 2rem; /* Menos espaço no topo */
+        padding-left: 0.2rem;
         padding-right: 0.2rem;
         padding-bottom: 6rem;
     }
     
-    /* FORÇA AS COLUNAS A FICAREM LADO A LADO NO MOBILE */
+    /* GRID FORÇADO (5 colunas) */
     [data-testid="stHorizontalBlock"] {
-        flex-wrap: nowrap !important; /* Impede quebrar linha */
+        flex-wrap: nowrap !important;
     }
     
     [data-testid="column"] {
-        flex: 1 !important; /* Força largura igual */
-        min-width: 0 !important; /* Permite ficar menor que o padrão */
-        padding: 0 1px !important; /* Remove espaçamento extra */
+        flex: 1 !important;
+        min-width: 0 !important;
+        padding: 0 1px !important;
     }
     
-    /* Botões do Grid (Ajustados para caber 5 na linha) */
+    /* Botões Numéricos */
     div[data-testid="stHorizontalBlock"] button {
         min-height: 42px !important;
-        padding: 0px !important; /* Remove preenchimento interno */
+        padding: 0px !important;
         border-radius: 6px !important;
         margin-bottom: 4px !important;
         font-weight: bold;
@@ -44,7 +44,7 @@ st.markdown("""
         width: 100% !important;
     }
     
-    /* Botões de Ação Principais (Salvar/Gerar) */
+    /* Botões Grandes (Salvar/Gerar) */
     .stButton button[kind="primary"] {
         width: 100%;
         border-radius: 12px;
@@ -55,11 +55,13 @@ st.markdown("""
         margin-top: 10px;
     }
     
-    /* Botão de Atualizar (Topo) */
+    /* Botão de Atualizar (Pequeno/Esquerda) */
     .stButton button[kind="secondary"] {
-        border-radius: 10px;
+        border-radius: 50%; /* Redondo */
         height: 45px;
-        border: 1px solid #e0e0e0;
+        width: 45px;
+        border: 1px solid #ccc;
+        padding: 0 !important;
     }
     
     /* Abas */
@@ -84,22 +86,27 @@ st.markdown("""
         font-weight: bold;
     }
     
-    /* Esconde Header */
-    header[data-testid="stHeader"] {
-        display: none;
+    /* Esconde Header Streamlit */
+    header[data-testid="stHeader"] { display: none; }
+    
+    /* Ajuste de alinhamento do título com o botão */
+    h3 {
+        padding-top: 10px;
+        margin-bottom: 0px;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # --- CONFIGURAÇÃO DO ÍCONE IOS ---
 def setup_ios_icon():
-    icon_url = "https://cdn-icons-png.flaticon.com/512/188/188333.png"
+    # Link direto para um PNG simples (Trevo)
+    icon_url = "https://img.icons8.com/color/480/clover--v1.png"
+    
     st.markdown(f"""
         <link rel="apple-touch-icon" href="{icon_url}">
-        <link rel="apple-touch-icon-precomposed" href="{icon_url}">
         <meta name="apple-mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-title" content="MegaSena">
-        <meta name="apple-mobile-web-app-status-bar-style" content="default">
+        <meta name="apple-mobile-web-app-title" content="MegaApp">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     """, unsafe_allow_html=True)
 
 # --- BANCO DE DADOS ---
@@ -236,47 +243,47 @@ def main():
     
     if 'selected_numbers' not in st.session_state: st.session_state.selected_numbers = []
 
-    c1, c2 = st.columns([2, 1])
-    with c1:
-        st.subheader("🎱 Mega Mobile")
-        st.caption("v1.3 - Grade Fixa")
-    with c2:
-        if st.button("🔄 Atualizar"):
-            with st.spinner("Verificando..."):
+    # --- CABEÇALHO (BOTÃO NA ESQUERDA) ---
+    # Ajustei a proporção para o botão ficar compacto
+    c_btn, c_title = st.columns([1, 5])
+    
+    with c_btn:
+        # Botão de Atualizar (Ícone apenas)
+        if st.button("🔄", help="Atualizar Base"):
+            with st.spinner("."):
                 count = fetch_latest_results()
                 conn = get_db_connection()
                 conn.execute("INSERT OR REPLACE INTO app_config (key, value) VALUES ('last_update', ?)", (datetime.now().strftime("%Y-%m-%d"),))
                 conn.commit(); conn.close()
             if count > 0: st.toast(f"{count} novos!", icon="✅")
             else: st.toast("Atualizado!", icon="👍")
-            time.sleep(1); st.rerun()
+            time.sleep(0.5); st.rerun()
 
+    with c_title:
+        st.subheader("Mega Mobile")
+        # st.caption removido para limpar visual, pode descomentar se quiser
+        # st.caption("v1.4")
+
+    # --- ABAS ---
     tab_games, tab_stats, tab_gen, tab_config = st.tabs(["📋 Jogos", "📊 Stats", "🎲 Gerar", "⚙️ Config"])
 
     with tab_games:
         with st.expander("➕ Novo Jogo Manual", expanded=False):
-            # LÓGICA DO GRID (5 colunas x 12 linhas)
-            # O CSS acima garante que 'cols_per_row' seja respeitado e não empilhado
             cols_per_row = 5
-            rows = 12 
-            
-            for r in range(rows):
+            for r in range(12):
                 cols = st.columns(cols_per_row)
                 for c in range(cols_per_row):
                     num = (r * cols_per_row) + c + 1
                     if num <= 60:
                         with cols[c]:
                             is_sel = num in st.session_state.selected_numbers
-                            # Botão do número
                             st.button(f"{num:02d}", key=f"b_{num}", 
                                       type="primary" if is_sel else "secondary", 
                                       on_click=toggle_number, args=(num,))
-            
             st.markdown("---")
             c_info, c_clear = st.columns([3, 1])
             c_info.markdown(f"**Selecionados:** {len(st.session_state.selected_numbers)}")
             c_clear.button("Limpar", on_click=clear_selection, use_container_width=True)
-            
             start_date = st.date_input("Início da verificação:", date.today(), key="date_manual")
             if st.button("💾 SALVAR MANUAL", type="primary"):
                 if len(st.session_state.selected_numbers) < 6: st.error("Mínimo 6 números.")
@@ -288,8 +295,6 @@ def main():
                     st.success("Salvo!"); clear_selection(); time.sleep(0.5); st.rerun()
         
         st.write("") 
-        
-        # LISTA DE JOGOS
         conn = get_db_connection()
         df = pd.read_sql_query("SELECT * FROM tracked_games WHERE active=1 ORDER BY id DESC", conn)
         conn.close()
