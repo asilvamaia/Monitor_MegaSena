@@ -7,7 +7,6 @@ import random
 from collections import Counter
 from datetime import datetime, date
 import time
-import io
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Mega Mobile", layout="centered", page_icon="🎱")
@@ -19,7 +18,7 @@ if 'theme' not in st.session_state:
 def toggle_theme():
     st.session_state.theme = 'light' if st.session_state.theme == 'dark' else 'dark'
 
-# Cores do Tema
+# Definição de Cores
 if st.session_state.theme == 'dark':
     bg_color = "#0e1117"
     card_bg = "#262730"
@@ -33,7 +32,7 @@ else:
     btn_sec_bg = "#ffffff"
     border_color = "#e0e0e0"
 
-# --- CSS OTIMIZADO ---
+# --- CSS DE ALINHAMENTO E TEMA ---
 st.markdown(f"""
 <style>
     /* Tema Global */
@@ -43,23 +42,27 @@ st.markdown(f"""
     }}
     
     .block-container {{
-        padding-top: 1.5rem; /* Topo mais compacto */
-        padding-left: 0.2rem;
-        padding-right: 0.2rem;
+        padding-top: 2rem;
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
         padding-bottom: 6rem;
     }}
     
-    /* === GRID DE NÚMEROS === */
-    /* Força colunas lado a lado no mobile */
+    /* --- CORREÇÃO DO GRID (Força 5 colunas no mobile) --- */
+    /* Isso impede que as colunas quebrem linha, mantendo o grid 5x12 intacto */
     [data-testid="stHorizontalBlock"] {{
         flex-wrap: nowrap !important;
+        gap: 2px !important;
     }}
+    
+    /* Remove margens laterais das colunas para caber na tela */
     div[data-testid="column"] {{
-        flex: 1 !important;
         min-width: 0 !important;
-        padding: 0 1px !important;
+        flex: 1 1 0 !important; 
+        padding: 0 !important;
     }}
-    /* Botões numéricos */
+    
+    /* Botões do Grid Numérico */
     div[data-testid="column"] button {{
         width: 100% !important;
         min-height: 42px !important;
@@ -67,36 +70,46 @@ st.markdown(f"""
         margin: 2px 0px !important;
         border-radius: 6px !important;
         font-weight: bold;
+        font-size: 14px !important;
     }}
     
-    /* === BOTÕES DE CABEÇALHO (Atualizar/Tema) === */
-    /* Classe CSS específica que vamos injetar nos botões do topo */
-    div[data-testid="column"] .header-btn {{
+    /* --- BOTÕES DO CABEÇALHO --- */
+    /* Classe para os botões pequenos do topo */
+    .header-btn {{
         width: 100% !important;
-        height: 40px !important;
+        height: 42px !important;
         border-radius: 8px !important;
-        padding: 0 !important;
         background-color: {btn_sec_bg} !important;
         color: {text_color} !important;
         border: 1px solid {border_color} !important;
         display: flex;
         align-items: center;
         justify-content: center;
+        cursor: pointer;
+        margin-top: 0px !important;
     }}
     
-    /* === BOTÕES PRINCIPAIS (Salvar/Gerar) === */
+    /* Remove a margem padrão do H3 para alinhar com os botões */
+    h3 {{
+        padding-top: 0px !important;
+        margin-top: 0px !important;
+        margin-bottom: 0px !important;
+        line-height: 42px !important; /* Mesma altura dos botões */
+    }}
+    
+    /* --- BOTÕES PRINCIPAIS (SALVAR/GERAR) --- */
     .stButton button[kind="primary"] {{
         width: 100%;
         border-radius: 12px;
-        height: 52px;
+        height: 50px;
         font-size: 18px;
         background-color: #ff4b4b !important;
         color: white !important;
         border: none;
-        margin-top: 10px;
+        margin-top: 8px; /* Espaço para separar dos inputs */
     }}
     
-    /* === ELEMENTOS VISUAIS === */
+    /* --- ELEMENTOS GERAIS --- */
     div[data-testid="stExpander"], div[data-testid="stContainer"] {{
         background-color: {card_bg};
         border-radius: 10px;
@@ -121,16 +134,16 @@ st.markdown(f"""
         border-bottom: 3px solid #ff4b4b;
     }}
     
+    /* Esconde Header Nativo */
     header[data-testid="stHeader"] {{ display: none; }}
-    h3, p, span, div {{ color: {text_color}; }}
+    
+    h3, p, span, div, label {{ color: {text_color} !important; }}
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONFIGURAÇÃO DO ÍCONE IOS (GITHUB RAW) ---
+# --- ÍCONE IOS ---
 def setup_ios_icon():
-    # Usando o Emoji Oficial do Twitter (Clover) hospedado no GitHub
     icon_url = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f340.png"
-    
     st.markdown(f"""
         <link rel="apple-touch-icon" href="{icon_url}">
         <meta name="apple-mobile-web-app-capable" content="yes">
@@ -192,7 +205,6 @@ def get_statistics():
 def generate_game(qtd, strategy, counter):
     nums = list(range(1, 61))
     if strategy == "random" or not counter: return sorted(random.sample(nums, qtd))
-    
     weights_smart = [counter.get(n, 0)+1 for n in nums]
     weights_cold = [1/(counter.get(n, 0)+1) for n in nums]
     
@@ -205,15 +217,12 @@ def generate_game(qtd, strategy, counter):
         while len(sel)<qtd: sel.add(random.choices(nums, weights_cold)[0])
         return sorted(list(sel))
     elif strategy == "balanced":
-        # Mista: Pega metade dos Top 30 quentes e metade dos Top 30 frios (inversos)
         sorted_nums = sorted(nums, key=lambda x: counter.get(x,0), reverse=True)
-        hot_pool = sorted_nums[:30]
-        cold_pool = sorted_nums[30:]
-        
+        hot, cold = sorted_nums[:30], sorted_nums[30:]
         sel = set()
-        while len(sel) < (qtd // 2) + (qtd % 2): sel.add(random.choice(hot_pool))
+        while len(sel) < (qtd // 2) + (qtd % 2): sel.add(random.choice(hot))
         while len(sel) < qtd: 
-            p = random.choice(cold_pool)
+            p = random.choice(cold)
             if p not in sel: sel.add(p)
         return sorted(list(sel))
     return sorted(random.sample(nums, qtd))
@@ -223,9 +232,7 @@ def check_matches(game_nums, start_date):
     df = pd.read_sql_query("SELECT * FROM results WHERE data_sorteio >= ? ORDER BY data_sorteio DESC", conn, params=(start_date,))
     conn.close()
     matches = []
-    # --- CORREÇÃO AQUI ---
-    g_set = set(game_nums) # Antes estava set(game_numbers=game_nums)
-    # ---------------------
+    g_set = set(game_nums)
     for _, row in df.iterrows():
         d_set = set(json.loads(row['dezenas']))
         hits = g_set.intersection(d_set)
@@ -243,33 +250,32 @@ def main():
     init_db()
     if 'selected_numbers' not in st.session_state: st.session_state.selected_numbers = []
 
-    # --- CABEÇALHO OTIMIZADO (BOTÕES JUNTOS) ---
-    c_header_actions, c_header_title = st.columns([2.5, 6]) 
+    # --- CABEÇALHO ALINHADO ---
+    # vertical_alignment="center" garante que botões e texto fiquem na mesma linha imaginária
+    c1, c2, c3 = st.columns([1, 1, 5], vertical_alignment="center") 
     
-    with c_header_actions:
-        b1, b2 = st.columns([1, 1], gap="small")
-        with b1:
-            if st.button("🔄", help="Atualizar"):
-                with st.spinner("..."):
-                    c = fetch_latest_results()
-                    conn = get_db_connection()
-                    conn.execute("INSERT OR REPLACE INTO app_config (key, value) VALUES ('last_update', ?)", (datetime.now().strftime("%Y-%m-%d"),))
-                    conn.commit(); conn.close()
-                st.toast(f"{c} novos!" if c > 0 else "OK!", icon="✅"); time.sleep(0.5); st.rerun()
-        with b2:
-            theme_icon = "🌞" if st.session_state.theme == 'dark' else "🌙"
-            if st.button(theme_icon, on_click=toggle_theme): st.rerun()
+    with c1:
+        if st.button("🔄", help="Atualizar"):
+            with st.spinner("."):
+                c = fetch_latest_results()
+                conn = get_db_connection()
+                conn.execute("INSERT OR REPLACE INTO app_config (key, value) VALUES ('last_update', ?)", (datetime.now().strftime("%Y-%m-%d"),))
+                conn.commit(); conn.close()
+            st.toast(f"{c} novos!" if c > 0 else "OK!", icon="✅"); time.sleep(0.5); st.rerun()
+            
+    with c2:
+        theme_icon = "🌞" if st.session_state.theme == 'dark' else "🌙"
+        if st.button(theme_icon, on_click=toggle_theme): st.rerun()
 
-    with c_header_title:
+    with c3:
         st.subheader("Mega Mobile")
 
-    # --- MENU DE ABAS ---
+    # --- ABAS ---
     tabs = st.tabs(["📋 Jogos", "📊 Stats", "🎲 Gerar", "⚙️ Config"])
 
-    # ABA 1: JOGOS
     with tabs[0]:
         with st.expander("➕ Novo Jogo", expanded=False):
-            # GRID 5 COLUNAS
+            # GRID
             for r in range(12):
                 cols = st.columns(5)
                 for c in range(5):
@@ -279,12 +285,12 @@ def main():
                         st.button(f"{n:02d}", key=f"n{n}", type=type_Btn, on_click=toggle_num, args=(n,))
             
             st.markdown("---")
-            c_inf, c_clr = st.columns([3, 1])
-            c_inf.write(f"**Selecionados: {len(st.session_state.selected_numbers)}**")
+            c_inf, c_clr = st.columns([3, 1], vertical_alignment="center")
+            c_inf.write(f"**Sel: {len(st.session_state.selected_numbers)}**")
             c_clr.button("Limpar", on_click=lambda: st.session_state.update(selected_numbers=[]))
             
             dt = st.date_input("Início:", date.today())
-            if st.button("💾 SALVAR", type="primary"):
+            if st.button("💾 SALVAR JOGO", type="primary"):
                 if len(st.session_state.selected_numbers) < 6: st.error("Mínimo 6!")
                 else:
                     conn = get_db_connection()
@@ -308,7 +314,7 @@ def main():
             
             with st.container(border=True):
                 if not st.session_state[key_ed]:
-                    ca, cb, cc = st.columns([5, 1, 1])
+                    ca, cb, cc = st.columns([5, 1, 1], vertical_alignment="center")
                     ca.markdown(f"**#{gid}** ({len(game_nums)} dz)")
                     if cb.button("✏️", key=f"e{gid}"): st.session_state[key_ed]=True; st.rerun()
                     if cc.button("🗑️", key=f"d{gid}"): 
@@ -338,7 +344,6 @@ def main():
                         conn=get_db_connection(); conn.execute("UPDATE tracked_games SET start_date=? WHERE id=?",(new_d.strftime("%Y-%m-%d"), gid)); conn.commit(); conn.close(); st.session_state[key_ed]=False; st.rerun()
                     if c2.button("Cancelar", key=f"cn{gid}"): st.session_state[key_ed]=False; st.rerun()
 
-    # ABA 2: STATS
     with tabs[1]:
         freq, lag, ctr = get_statistics()
         if freq is not None:
@@ -349,24 +354,24 @@ def main():
             st.bar_chart(freq, color="#ff4b4b", height=200)
         else: st.warning("Atualize a base.")
 
-    # ABA 3: GERADOR
     with tabs[2]:
-        c1, c2 = st.columns([1, 2])
+        c1, c2 = st.columns([1, 2], vertical_alignment="center")
         qtd = c1.number_input("Qtd", 6, 20, 6)
         strat = c2.selectbox("Estratégia", ["Aleatória", "Smart (Quentes)", "Cold (Frias)", "Balanced (Mista)"])
         strat_key = {"Aleatória":"random", "Smart (Quentes)":"smart", "Cold (Frias)":"cold", "Balanced (Mista)":"balanced"}
         
-        if st.button("🎲 GERAR", type="primary"):
+        # Adiciona um espaço visual para alinhar com os inputs
+        st.write("") 
+        if st.button("🎲 GERAR NÚMEROS", type="primary"):
             _, _, ctr = get_statistics()
             st.session_state.last_gen = generate_game(qtd, strat_key[strat], ctr)
             
         if 'last_gen' in st.session_state:
             g = st.session_state.last_gen
             st.markdown(" ".join([f"`{x:02d}`" for x in g]))
-            if st.button("💾 Salvar"):
+            if st.button("💾 Salvar Gerado"):
                 conn=get_db_connection(); conn.execute("INSERT INTO tracked_games (numbers, start_date) VALUES (?, ?)", (json.dumps(g), date.today().strftime("%Y-%m-%d"))); conn.commit(); conn.close(); st.toast("Salvo!"); del st.session_state.last_gen; time.sleep(0.5); st.rerun()
 
-    # ABA 4: CONFIG
     with tabs[3]:
         st.info("Backup dos dados")
         conn = get_db_connection()
